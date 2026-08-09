@@ -264,7 +264,7 @@ export function RefSearchTab() {
     setLoading(true)
     setSearched(false)
     try {
-      const pdfFiles = [...fileList].filter((f) =>
+      const pdfFiles = Array.from(fileList).filter((f) =>
         f.name.toLowerCase().endsWith('.pdf'),
       )
       if (!pdfFiles.length) {

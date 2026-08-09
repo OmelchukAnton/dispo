@@ -1,6 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { addDays, addMinutes } from 'date-fns'
-import { TRUCK_IDS } from '../data/trucks'
+import {
+  FLEET_CHANGED_EVENT,
+  loadFleetIds,
+  splitFleetGroups,
+} from '../data/trucks'
 import type {
   InstructionTruckState,
   OpType,
@@ -11,18 +15,25 @@ import type {
 import { wallClockMinutesForDriving } from '../utils/breaks'
 import { parseTimeInput } from '../utils/format'
 
-function loadInstructionState(): Record<TruckId, InstructionTruckState> {
+function emptyInstruction(): InstructionTruckState {
+  return { sent: false, weekendRest: null }
+}
+
+function loadInstructionState(
+  ids: TruckId[],
+): Record<string, InstructionTruckState> {
   const raw = localStorage.getItem('dispatch-instructions-v1')
+  let parsed: Record<string, InstructionTruckState> = {}
   if (raw) {
     try {
-      return JSON.parse(raw) as Record<TruckId, InstructionTruckState>
+      parsed = JSON.parse(raw) as Record<string, InstructionTruckState>
     } catch {
-      /* fallthrough */
+      parsed = {}
     }
   }
-  const init = {} as Record<TruckId, InstructionTruckState>
-  for (const id of TRUCK_IDS) {
-    init[id] = { sent: false, weekendRest: null }
+  const init: Record<string, InstructionTruckState> = {}
+  for (const id of ids) {
+    init[id] = parsed[id] ?? emptyInstruction()
   }
   return init
 }
@@ -63,9 +74,12 @@ function buildMessage(
     `You will arrive around ${formatClock(arriveRounded)}.`,
     `Make a ${rest}h pause.`,
     `Start tomorrow at ${formatClock(startRounded)}.`,
-    targetText
-      ? `Go to the ${opWord} at ${targetText}.`
-      : `Go to the ${opWord}.`,
+    `Go to the ${opWord}.`,
+    ...(targetText
+      ? [
+          `${op === 'unloading' ? 'Unloading' : 'Loading'} at ${targetText}.`,
+        ]
+      : []),
     'Everything clear? Please confirm.',
   ].join('\n')
 }
@@ -83,9 +97,27 @@ export function InstructionsTab() {
   const [arriveBy, setArriveBy] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [truckState, setTruckState] = useState(loadInstructionState)
+  const [truckIds, setTruckIds] = useState<TruckId[]>(() => loadFleetIds())
+  const [truckState, setTruckState] = useState(() =>
+    loadInstructionState(loadFleetIds()),
+  )
 
-  function persist(next: Record<TruckId, InstructionTruckState>) {
+  useEffect(() => {
+    function syncFleet() {
+      const ids = loadFleetIds()
+      setTruckIds(ids)
+      setTruckState((prev) => {
+        const next: Record<string, InstructionTruckState> = {}
+        for (const id of ids) next[id] = prev[id] ?? emptyInstruction()
+        localStorage.setItem('dispatch-instructions-v1', JSON.stringify(next))
+        return next
+      })
+    }
+    window.addEventListener(FLEET_CHANGED_EVENT, syncFleet)
+    return () => window.removeEventListener(FLEET_CHANGED_EVENT, syncFleet)
+  }, [])
+
+  function persist(next: Record<string, InstructionTruckState>) {
     setTruckState(next)
     localStorage.setItem('dispatch-instructions-v1', JSON.stringify(next))
   }
@@ -150,25 +182,83 @@ export function InstructionsTab() {
   }
 
   function toggleSent(id: TruckId) {
+    const current = truckState[id] ?? emptyInstruction()
     const next = {
       ...truckState,
-      [id]: { ...truckState[id], sent: !truckState[id].sent },
+      [id]: { ...current, sent: !current.sent },
     }
     persist(next)
   }
 
   function setWeekend(id: TruckId, value: WeekendRest) {
+    const current = truckState[id] ?? emptyInstruction()
     const next = {
       ...truckState,
-      [id]: { ...truckState[id], weekendRest: value },
+      [id]: { ...current, weekendRest: value },
     }
     persist(next)
   }
 
   const sentCount = useMemo(
-    () => TRUCK_IDS.filter((id) => truckState[id]?.sent).length,
-    [truckState],
+    () => truckIds.filter((id) => truckState[id]?.sent).length,
+    [truckState, truckIds],
   )
+
+  function clearAllSent() {
+    if (sentCount === 0) return
+    if (
+      !window.confirm(
+        `Clear sent mark for ${sentCount} truck${sentCount === 1 ? '' : 's'}?`,
+      )
+    ) {
+      return
+    }
+    const next = { ...truckState }
+    for (const id of truckIds) {
+      const current = next[id] ?? emptyInstruction()
+      if (current.sent) {
+        next[id] = { ...current, sent: false }
+      }
+    }
+    persist(next)
+  }
+
+  const { main: mainIds, loctracker: loctrackerIds } = useMemo(
+    () => splitFleetGroups(truckIds),
+    [truckIds],
+  )
+
+  function renderFleetChips(ids: TruckId[]) {
+    return ids.map((id) => {
+      const state = truckState[id] ?? emptyInstruction()
+      return (
+        <li key={id} className="fleet-chip">
+          <button
+            type="button"
+            className={`fleet-truck ${state.sent ? 'is-sent' : ''}`}
+            onClick={() => toggleSent(id)}
+            title="Click to mark instruction sent"
+          >
+            {id}
+          </button>
+          <select
+            className="select select--weekend"
+            aria-label={`Weekend rest for ${id}`}
+            title="Weekend Rest"
+            value={state.weekendRest ?? ''}
+            onChange={(e) => {
+              const v = e.target.value
+              setWeekend(id, v === '' ? null : (Number(v) as 24 | 47))
+            }}
+          >
+            <option value="">—</option>
+            <option value="24">24h</option>
+            <option value="47">47h</option>
+          </select>
+        </li>
+      )
+    })
+  }
 
   return (
     <section className="panel panel--instructions">
@@ -309,39 +399,32 @@ export function InstructionsTab() {
       <div className="truck-list-card">
         <div className="panel__toolbar panel__toolbar--tight">
           <h3 className="panel__subtitle">Fleet</h3>
-          <span className="badge">{sentCount} sent</span>
+          <div className="panel__toolbar-actions">
+            <span className="badge">{sentCount} sent</span>
+            <button
+              type="button"
+              className="btn btn--danger btn--tiny"
+              disabled={sentCount === 0}
+              onClick={clearAllSent}
+            >
+              Clear sent
+            </button>
+          </div>
         </div>
-        <ul className="fleet-list">
-          {TRUCK_IDS.map((id) => {
-            const state = truckState[id] ?? { sent: false, weekendRest: null }
-            return (
-              <li key={id} className="fleet-chip">
-                <button
-                  type="button"
-                  className={`fleet-truck ${state.sent ? 'is-sent' : ''}`}
-                  onClick={() => toggleSent(id)}
-                  title="Click to mark instruction sent"
-                >
-                  {id}
-                </button>
-                <select
-                  className="select select--weekend"
-                  aria-label={`Weekend rest for ${id}`}
-                  title="Weekend Rest"
-                  value={state.weekendRest ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setWeekend(id, v === '' ? null : (Number(v) as 24 | 47))
-                  }}
-                >
-                  <option value="">—</option>
-                  <option value="24">24h</option>
-                  <option value="47">47h</option>
-                </select>
-              </li>
-            )
-          })}
-        </ul>
+        {mainIds.length > 0 && (
+          <>
+            <p className="fleet-group-label">Main</p>
+            <ul className="fleet-list">{renderFleetChips(mainIds)}</ul>
+          </>
+        )}
+        {loctrackerIds.length > 0 && (
+          <>
+            <p className="fleet-group-label fleet-group-label--loctracker">
+              Loctracker
+            </p>
+            <ul className="fleet-list">{renderFleetChips(loctrackerIds)}</ul>
+          </>
+        )}
       </div>
     </section>
   )

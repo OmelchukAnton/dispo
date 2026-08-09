@@ -3,6 +3,7 @@ import { TrucksTab } from './components/TrucksTab'
 import { InstructionsTab } from './components/InstructionsTab'
 import { EtaTab } from './components/EtaTab'
 import { OrderAccountTab } from './components/OrderAccountTab'
+import { AvgDistanceTab } from './components/AvgDistanceTab'
 import { RefSearchTab } from './components/RefSearchTab'
 import type { TabId } from './types'
 import './App.css'
@@ -12,6 +13,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'instructions', label: 'Generate instructions' },
   { id: 'eta', label: 'Long Trip ETA' },
   { id: 'orders', label: 'Order Account' },
+  { id: 'distance', label: 'Avg Distance' },
   { id: 'refs', label: 'Ref Search' },
 ]
 
@@ -47,6 +49,7 @@ function App() {
         {tab === 'instructions' && <InstructionsTab />}
         {tab === 'eta' && <EtaTab />}
         {tab === 'orders' && <OrderAccountTab />}
+        {tab === 'distance' && <AvgDistanceTab />}
         {tab === 'refs' && <RefSearchTab />}
       </main>
     </div>

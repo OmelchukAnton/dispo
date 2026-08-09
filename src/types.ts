@@ -1,19 +1,4 @@
-export type TruckId =
-  | 'AIF363'
-  | 'AIF220'
-  | 'AIF242'
-  | 'AIN471'
-  | 'AIN475'
-  | 'AYA796'
-  | 'AYA824'
-  | 'MNB814'
-  | 'MNB854'
-  | 'MOF455'
-  | 'NEV532'
-  | 'NRP081'
-  | 'NSN238'
-  | 'NSN312'
-  | 'NUI290'
+export type TruckId = string
 
 export interface DriverCard {
   driverName: string
@@ -33,6 +18,7 @@ export interface TruckRowState {
   informClient: boolean
   closeTrip: boolean
   safeParking: boolean
+  moRefusal: boolean
   fixHour: number | ''
   newOrder: boolean
   newOrderLoaded: boolean
@@ -49,4 +35,10 @@ export interface InstructionTruckState {
   weekendRest: WeekendRest
 }
 
-export type TabId = 'trucks' | 'instructions' | 'eta' | 'orders' | 'refs'
+export type TabId =
+  | 'trucks'
+  | 'instructions'
+  | 'eta'
+  | 'orders'
+  | 'distance'
+  | 'refs'

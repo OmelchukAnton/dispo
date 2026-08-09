@@ -18,6 +18,10 @@ interface OrderRow {
   waitingTill: Date | null
   waitingMinutes: number | null
   overFourHours: boolean
+  /** How many unloading stops were merged into this one count. */
+  stops: number
+  /** All Waiting from / arrival times for this truck on that day. */
+  arrivedTimes: Date[]
 }
 
 interface OrderReport {
@@ -28,10 +32,24 @@ interface OrderReport {
   overFourHoursCount: number
   overFourHoursLoading: number
   overFourHoursUnloading: number
+  groupageCount: number
   days: DayStats[]
   rows: OrderRow[]
   overtimeRows: OrderRow[]
+  groupageRows: GroupageRow[]
 }
+
+interface GroupageRow {
+  plate: string
+  dateKey: string
+  dateLabel: string
+  loadingMinutes: number
+  unloadingMinutes: number
+  totalMinutes: number
+  orderNumber: string
+}
+
+const GROUPAGE_MINUTES = 3 * 60 // 180
 
 function findKey(row: Record<string, unknown>, names: string[]): string | null {
   const keys = Object.keys(row)
@@ -153,14 +171,26 @@ function readRowFields(row: Record<string, unknown>) {
 }
 
 function analyzeRows(rows: Record<string, unknown>[]): Omit<OrderReport, 'fileName'> {
-  const unloadingRows: OrderRow[] = []
   const overtimeRows: OrderRow[] = []
   const dayMap = new Map<string, DayStats>()
 
-  let totalUnloadings = 0
-  let beforeNoonTotal = 0
   let overFourHoursLoading = 0
   let overFourHoursUnloading = 0
+
+  // plate|yyyy-MM-dd → merged unloading
+  const unloadGroups = new Map<string, OrderRow>()
+
+  // plate|yyyy-MM-dd → Loading + Unloading minutes for groupage
+  const dayOps = new Map<
+    string,
+    {
+      plate: string
+      dateKey: string
+      loadingMinutes: number
+      unloadingMinutes: number
+      orders: string[]
+    }
+  >()
 
   for (const row of rows) {
     const fields = readRowFields(row)
@@ -181,22 +211,134 @@ function analyzeRows(rows: Record<string, unknown>[]): Omit<OrderReport, 'fileNa
       waitingTill: fields.waitingTill,
       waitingMinutes: fields.waitingMinutes,
       overFourHours,
+      stops: 1,
+      arrivedTimes: fields.waitingFrom ? [fields.waitingFrom] : [],
     }
 
-    // Extra: list trucks with Loading or Unloading > 4h
+    // Extra: list trucks with Loading or Unloading > 4h (per stop)
     if (overFourHours) {
       overtimeRows.push(orderRow)
       if (isLoading) overFourHoursLoading += 1
       if (isUnloading) overFourHoursUnloading += 1
     }
 
-    // Main unloadings account: only Unloading + Waiting from
+    // Groupage: same truck, same day — sum Loading + Unloading minutes
+    const opDate = fields.waitingFrom ?? fields.waitingTill
+    if (opDate && fields.waitingMinutes != null && fields.waitingMinutes > 0) {
+      const plate =
+        fields.plate.toUpperCase().replace(/\s+/g, '') ||
+        fields.vehicle.toUpperCase().replace(/\s+/g, '')
+      if (plate) {
+        const dateKey = format(opDate, 'yyyy-MM-dd')
+        const key = `${plate}|${dateKey}`
+        const op = dayOps.get(key) ?? {
+          plate,
+          dateKey,
+          loadingMinutes: 0,
+          unloadingMinutes: 0,
+          orders: [],
+        }
+        if (isLoading) op.loadingMinutes += fields.waitingMinutes
+        if (isUnloading) op.unloadingMinutes += fields.waitingMinutes
+        if (fields.orderNumber && !op.orders.includes(fields.orderNumber)) {
+          op.orders.push(fields.orderNumber)
+        }
+        dayOps.set(key, op)
+      }
+    }
+
+    // Main unloadings: Unloading + Waiting from, 1 per truck per day
     if (!isUnloading || !fields.waitingFrom) continue
 
+    const plate = fields.plate.toUpperCase() || fields.vehicle.toUpperCase()
+    const dateKey = format(fields.waitingFrom, 'yyyy-MM-dd')
+    const groupKey = `${plate}|${dateKey}`
+    const existing = unloadGroups.get(groupKey)
+
+    if (!existing) {
+      unloadGroups.set(groupKey, {
+        ...orderRow,
+        stops: 1,
+        arrivedTimes: [fields.waitingFrom],
+      })
+      continue
+    }
+
+    // Merge extra stops into one unloading for the day
+    existing.stops += 1
+    existing.arrivedTimes.push(fields.waitingFrom)
+    existing.arrivedTimes.sort((a, b) => a.getTime() - b.getTime())
+
+    const existingFrom = existing.waitingFrom?.getTime() ?? Number.POSITIVE_INFINITY
+    const nextFrom = fields.waitingFrom.getTime()
+    if (nextFrom < existingFrom) {
+      existing.waitingFrom = fields.waitingFrom
+      existing.waitingTill = fields.waitingTill
+      existing.waitingMinutes = fields.waitingMinutes
+      existing.orderNumber = fields.orderNumber
+      existing.vehicle = fields.vehicle
+      existing.overFourHours = overFourHours || existing.overFourHours
+    } else if (overFourHours) {
+      existing.overFourHours = true
+    }
+    if (
+      fields.orderNumber &&
+      existing.orderNumber &&
+      !existing.orderNumber.includes(fields.orderNumber)
+    ) {
+      existing.orderNumber = `${existing.orderNumber}, ${fields.orderNumber}`
+    }
+  }
+
+  const groupageRows: GroupageRow[] = [...dayOps.values()]
+    .map((op) => {
+      const totalMinutes = op.loadingMinutes + op.unloadingMinutes
+      return {
+        plate: op.plate,
+        dateKey: op.dateKey,
+        dateLabel: format(parse(op.dateKey, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy'),
+        loadingMinutes: op.loadingMinutes,
+        unloadingMinutes: op.unloadingMinutes,
+        totalMinutes,
+        orderNumber: op.orders.join(', '),
+      }
+    })
+    .filter((g) => {
+      if (
+        !(
+          g.loadingMinutes > 0 &&
+          g.unloadingMinutes > 0 &&
+          g.totalMinutes > GROUPAGE_MINUTES
+        )
+      ) {
+        return false
+      }
+      // Skip if this truck/day already counted in >4h overtime
+      const alreadyOverFour = overtimeRows.some((r) => {
+        const plate = (r.plate || r.vehicle).toUpperCase().replace(/\s+/g, '')
+        const d = r.waitingFrom ?? r.waitingTill
+        if (!plate || !d) return false
+        return plate === g.plate && format(d, 'yyyy-MM-dd') === g.dateKey
+      })
+      return !alreadyOverFour
+    })
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.plate.localeCompare(b.plate))
+
+  const unloadingRows = [...unloadGroups.values()].sort((a, b) => {
+    const ta = a.waitingFrom?.getTime() ?? 0
+    const tb = b.waitingFrom?.getTime() ?? 0
+    return ta - tb
+  })
+
+  let totalUnloadings = 0
+  let beforeNoonTotal = 0
+
+  for (const row of unloadingRows) {
+    if (!row.waitingFrom) continue
     totalUnloadings += 1
 
-    const dateKey = format(fields.waitingFrom, 'yyyy-MM-dd')
-    const dateLabel = format(fields.waitingFrom, 'dd/MM/yyyy')
+    const dateKey = format(row.waitingFrom, 'yyyy-MM-dd')
+    const dateLabel = format(row.waitingFrom, 'dd/MM/yyyy')
     const day = dayMap.get(dateKey) ?? {
       dateKey,
       dateLabel,
@@ -204,20 +346,12 @@ function analyzeRows(rows: Record<string, unknown>[]): Omit<OrderReport, 'fileNa
       beforeNoon: 0,
     }
     day.unloadings += 1
-    if (isBeforeNoon(fields.waitingFrom)) {
+    if (isBeforeNoon(row.waitingFrom)) {
       day.beforeNoon += 1
       beforeNoonTotal += 1
     }
     dayMap.set(dateKey, day)
-
-    unloadingRows.push(orderRow)
   }
-
-  unloadingRows.sort((a, b) => {
-    const ta = a.waitingFrom?.getTime() ?? 0
-    const tb = b.waitingFrom?.getTime() ?? 0
-    return ta - tb
-  })
 
   overtimeRows.sort((a, b) => {
     const ta = a.waitingFrom?.getTime() ?? 0
@@ -236,9 +370,11 @@ function analyzeRows(rows: Record<string, unknown>[]): Omit<OrderReport, 'fileNa
     overFourHoursCount: overtimeRows.length,
     overFourHoursLoading,
     overFourHoursUnloading,
+    groupageCount: groupageRows.length,
     days,
     rows: unloadingRows,
     overtimeRows,
+    groupageRows,
   }
 }
 
@@ -290,8 +426,11 @@ export function OrderAccountTab() {
     <section className="panel">
       <h2 className="panel__title">Order Account</h2>
       <p className="panel__hint">
-        Main count: Unloading by Waiting from (before 12:00 / by day).
-        Additionally lists trucks with Loading or Unloading longer than 4 hours.
+        Counts Unloading by Waiting from (= Arrived). Multiple stops of the same
+        truck on the same day count as 1 unloading. Before 12:00 uses the first
+        arrival. Also lists Loading/Unloading &gt; 4h. Same truck with Loading +
+        Unloading &gt; 3h total in one day → Unloading + Loading (skipped if
+        already in &gt;4h list).
       </p>
 
       <label className="upload">
@@ -299,7 +438,10 @@ export function OrderAccountTab() {
         <input
           type="file"
           accept=".xlsx,.xls,.csv"
-          onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => {
+            void onFile(e.target.files?.[0] ?? null)
+            e.target.value = ''
+          }}
         />
       </label>
 
@@ -332,6 +474,10 @@ export function OrderAccountTab() {
               <span className="muted">Unloading &gt; 4h</span>
               <strong>{report.overFourHoursUnloading}</strong>
             </article>
+            <article className="stat accent">
+              <span className="muted">Unloading + Loading (&gt;3h)</span>
+              <strong>{report.groupageCount}</strong>
+            </article>
           </div>
 
           {report.days.length > 0 && (
@@ -359,6 +505,49 @@ export function OrderAccountTab() {
               </div>
             </div>
           )}
+
+          <div className="eta-result">
+            <h3 className="panel__subtitle">
+              Unloading + Loading &gt; 3h ({report.groupageCount})
+            </h3>
+            {report.groupageRows.length === 0 ? (
+              <p className="panel__hint">
+                No truck with Loading + Unloading over 3 hours the same day.
+              </p>
+            ) : (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Plate</th>
+                      <th>Task</th>
+                      <th>Date</th>
+                      <th>Loading</th>
+                      <th>Unloading</th>
+                      <th>Total</th>
+                      <th>Order</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.groupageRows.map((r) => (
+                      <tr
+                        key={`grp-${r.plate}-${r.dateKey}`}
+                        className="row-groupage"
+                      >
+                        <td className="truck-id">{r.plate}</td>
+                        <td>Unloading + Loading</td>
+                        <td>{r.dateLabel}</td>
+                        <td>{formatDuration(r.loadingMinutes)}</td>
+                        <td>{formatDuration(r.unloadingMinutes)}</td>
+                        <td>{formatDuration(r.totalMinutes)} ⚠ &gt;3h</td>
+                        <td>{r.orderNumber || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
           <div className="eta-result">
             <h3 className="panel__subtitle">
@@ -408,14 +597,17 @@ export function OrderAccountTab() {
           </div>
 
           <div className="eta-result">
-            <h3 className="panel__subtitle">Unloadings (Waiting from)</h3>
+            <h3 className="panel__subtitle">
+              Unloadings (1 per truck / day) — after 12:00 highlighted
+            </h3>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
                     <th>Plate</th>
-                    <th>Waiting from</th>
+                    <th>Arrived (Waiting from)</th>
                     <th>Before 12:00</th>
+                    <th>Stops</th>
                     <th>Waiting till</th>
                     <th>Duration</th>
                     <th>Order</th>
@@ -426,18 +618,28 @@ export function OrderAccountTab() {
                     const beforeNoon = r.waitingFrom
                       ? isBeforeNoon(r.waitingFrom)
                       : false
+                    const arrivedLabel =
+                      r.arrivedTimes.length > 0
+                        ? r.arrivedTimes
+                            .map((t) => format(t, 'dd/MM/yyyy HH:mm'))
+                            .join(' · ')
+                        : r.waitingFrom
+                          ? format(r.waitingFrom, 'dd/MM/yyyy HH:mm')
+                          : '—'
+                    const rowClass = r.overFourHours
+                      ? 'row-overtime'
+                      : !beforeNoon
+                        ? 'row-after-noon'
+                        : undefined
                     return (
                       <tr
-                        key={`${r.orderNumber}-${idx}`}
-                        className={r.overFourHours ? 'row-overtime' : undefined}
+                        key={`${r.plate}-${r.orderNumber}-${idx}`}
+                        className={rowClass}
                       >
                         <td className="truck-id">{r.plate || '—'}</td>
-                        <td>
-                          {r.waitingFrom
-                            ? format(r.waitingFrom, 'dd/MM/yyyy HH:mm')
-                            : '—'}
-                        </td>
+                        <td className="arrived-cell">{arrivedLabel}</td>
                         <td>{beforeNoon ? 'Yes' : 'No'}</td>
+                        <td>{r.stops}</td>
                         <td>
                           {r.waitingTill
                             ? format(r.waitingTill, 'dd/MM/yyyy HH:mm')

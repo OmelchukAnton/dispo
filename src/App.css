@@ -102,6 +102,13 @@
   margin-bottom: 1rem;
 }
 
+.panel__toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .panel__toolbar--tight {
   margin-bottom: 0.75rem;
   align-items: center;
@@ -164,6 +171,11 @@
   border-color: #9bb0c0;
 }
 
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .btn--primary {
   background: #16324f;
   border-color: #16324f;
@@ -181,6 +193,42 @@
   border-color: transparent;
   color: var(--accent);
   padding: 0.2rem 0.4rem;
+}
+
+.btn--tiny {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.75rem;
+  border-radius: 8px;
+}
+
+.btn--icon {
+  width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  line-height: 1;
+  font-weight: 700;
+  border-radius: 8px;
+}
+
+.fleet-add {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin: 0 0 1rem;
+  flex-wrap: wrap;
+}
+
+.fleet-add .input {
+  max-width: 220px;
+  flex: 1;
+}
+
+.fleet-add .select {
+  min-width: 8.5rem;
 }
 
 .table-wrap {
@@ -235,7 +283,75 @@
 }
 
 .data-table--trucks {
-  min-width: 920px;
+  min-width: 520px;
+}
+
+.data-table--trucks th {
+  text-align: center;
+  vertical-align: bottom;
+  line-height: 1.15;
+  padding: 0.55rem 0.45rem;
+}
+
+.data-table--trucks th:first-child {
+  text-align: left;
+}
+
+.data-table--trucks .th-stack {
+  display: table-cell;
+}
+
+.data-table--trucks .th-stack span {
+  display: block;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-size: 0.78rem;
+}
+
+.data-table--trucks td.center {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.data-table--trucks td.center input[type='checkbox'] {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0 auto;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.fleet-group-row td {
+  background: #e4ebf1;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.fleet-group-row--loctracker td {
+  background: #dde8f4;
+  color: #1e4a6e;
+}
+
+.fleet-group-label {
+  margin: 0.85rem 0 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.fleet-group-label:first-of-type {
+  margin-top: 0.35rem;
+}
+
+.fleet-group-label--loctracker {
+  color: #1e4a6e;
 }
 
 .sub-row td {
@@ -498,6 +614,32 @@
   display: none;
 }
 
+.upload-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 0.25rem 0 1.25rem;
+}
+
+.upload-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  background: #f8fafc;
+}
+
+.upload-card .panel__subtitle {
+  margin: 0 0 0.75rem;
+}
+
+.upload-card .upload {
+  margin-bottom: 0;
+}
+
+.upload-card .panel__hint {
+  margin: 0.65rem 0 0;
+}
+
 .ref-actions {
   display: flex;
   align-items: center;
@@ -652,6 +794,49 @@
   font-weight: 600;
 }
 
+.row-groupage {
+  background: #eff6ff;
+}
+
+.row-groupage td {
+  color: #1e3a8a;
+  font-weight: 600;
+}
+
+.row-after-noon {
+  background: #fffbeb;
+}
+
+.row-after-noon td {
+  color: #92400e;
+  font-weight: 600;
+}
+
+.row-low-distance {
+  background: #fff7ed;
+}
+
+.row-low-distance td {
+  color: #9a3412;
+  font-weight: 600;
+}
+
+.row-inactive-distance {
+  background: #f1f5f9;
+}
+
+.row-inactive-distance td {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.arrived-cell {
+  white-space: normal;
+  max-width: 280px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.86rem;
+}
+
 .stat strong {
   font-size: 1.15rem;
   word-break: break-word;
@@ -676,6 +861,13 @@
   overflow: hidden;
 }
 
+.modal--truck {
+  width: min(480px, 100%);
+  max-height: min(92vh, 780px);
+  display: flex;
+  flex-direction: column;
+}
+
 .modal__header {
   display: flex;
   justify-content: space-between;
@@ -683,11 +875,30 @@
   padding: 0.85rem 1rem;
   background: #eef3f7;
   border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
 }
 
 .modal__header h2 {
   margin: 0;
   font-size: 1.05rem;
+}
+
+.modal__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  border-top: 1px solid var(--line);
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+.modal__footer-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 
 .icon-btn {
@@ -697,6 +908,24 @@
   line-height: 1;
   cursor: pointer;
   color: var(--muted);
+}
+
+.truck-form {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+  overflow: auto;
+}
+
+.truck-form__field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.truck-form__field > span {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .driver-card {

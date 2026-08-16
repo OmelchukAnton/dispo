@@ -1,20 +1,24 @@
 import { useState } from 'react'
 import { TrucksTab } from './components/TrucksTab'
 import { InstructionsTab } from './components/InstructionsTab'
+import { WeeklyInstructionsTab } from './components/WeeklyInstructionsTab'
 import { EtaTab } from './components/EtaTab'
 import { OrderAccountTab } from './components/OrderAccountTab'
 import { AvgDistanceTab } from './components/AvgDistanceTab'
 import { RefSearchTab } from './components/RefSearchTab'
+import { TrafficBansTab } from './components/TrafficBansTab'
 import type { TabId } from './types'
 import './App.css'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'trucks', label: 'Trucks' },
   { id: 'instructions', label: 'Generate instructions' },
+  { id: 'weekly', label: 'Weekly Instructions' },
   { id: 'eta', label: 'Long Trip ETA' },
   { id: 'orders', label: 'Order Account' },
   { id: 'distance', label: 'Avg Distance' },
   { id: 'refs', label: 'Ref Search' },
+  { id: 'bans', label: 'Traffic bans' },
 ]
 
 function App() {
@@ -47,10 +51,12 @@ function App() {
       <main className="main">
         {tab === 'trucks' && <TrucksTab />}
         {tab === 'instructions' && <InstructionsTab />}
+        {tab === 'weekly' && <WeeklyInstructionsTab />}
         {tab === 'eta' && <EtaTab />}
         {tab === 'orders' && <OrderAccountTab />}
         {tab === 'distance' && <AvgDistanceTab />}
         {tab === 'refs' && <RefSearchTab />}
+        {tab === 'bans' && <TrafficBansTab />}
       </main>
     </div>
   )

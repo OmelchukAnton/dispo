@@ -16,7 +16,8 @@ export interface TruckRowState {
   updateClient: boolean
   unloaded: boolean
   informClient: boolean
-  closeTrip: boolean
+  todayUnloading: boolean
+  todayUnloadingEta: string
   safeParking: boolean
   moRefusal: boolean
   fixHour: number | ''
@@ -38,7 +39,56 @@ export interface InstructionTruckState {
 export type TabId =
   | 'trucks'
   | 'instructions'
+  | 'weekly'
   | 'eta'
   | 'orders'
   | 'distance'
   | 'refs'
+  | 'bans'
+
+export type WeeklyLang = 'en' | 'ru'
+export type WeeklyPauseKind = 'short' | 'long'
+export type WeeklyTodayKind =
+  | 'parking_from_task'
+  | 'after_loading'
+  | 'drive_full_time'
+  | 'after_ferry'
+  | 'near_company'
+export type WeeklyTonightPause = '9' | '11' | 'pull_chip' | 'none'
+export type WeeklyTomorrowGoal =
+  | 'next_parking'
+  | 'close_to_delivery'
+  | 'custom'
+export type WeeklyMondayAction =
+  | 'unloading'
+  | 'loading'
+  | 'trailer_swap'
+  | 'wait_order'
+  | 'custom'
+
+export interface WeeklyInstructionForm {
+  lang: WeeklyLang
+  pauseKind: WeeklyPauseKind
+  todayKind: WeeklyTodayKind
+  tonightPause: WeeklyTonightPause
+  tomorrowStart: string
+  tomorrowGoal: WeeklyTomorrowGoal
+  tomorrowCustom: string
+  trafficBan: boolean
+  trafficBanCountry: string
+  trafficBanFrom: string
+  trafficBanUntil: string
+  mondayStart: string
+  mondayAction: WeeklyMondayAction
+  mondayCustom: string
+  mondayArriveBy: string
+  trailerSwapTime: string
+  envelopes: boolean
+  driverChange: boolean
+  everythingClear: boolean
+  extraNotes: string
+}
+
+export interface WeeklyTruckState {
+  sent: boolean
+}

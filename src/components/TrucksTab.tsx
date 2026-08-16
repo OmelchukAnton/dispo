@@ -23,7 +23,8 @@ function emptyRow(): TruckRowState {
     updateClient: false,
     unloaded: false,
     informClient: false,
-    closeTrip: false,
+    todayUnloading: false,
+    todayUnloadingEta: '',
     safeParking: false,
     moRefusal: false,
     fixHour: '',
@@ -34,17 +35,22 @@ function emptyRow(): TruckRowState {
   }
 }
 
-function normalizeRow(raw: Partial<TruckRowState> | undefined): TruckRowState {
+function normalizeRow(
+  raw: (Partial<TruckRowState> & { closeTrip?: boolean }) | undefined,
+): TruckRowState {
+  const { closeTrip: legacyCloseTrip, ...rest } = raw ?? {}
   return {
     ...emptyRow(),
-    ...raw,
-    updateClient: Boolean(raw?.updateClient),
-    closeTrip: Boolean(raw?.closeTrip),
-    safeParking: Boolean(raw?.safeParking),
-    moRefusal: Boolean(raw?.moRefusal),
-    newOrder: Boolean(raw?.newOrder),
-    newOrderLoaded: Boolean(raw?.newOrderLoaded),
-    newOrderEta: typeof raw?.newOrderEta === 'string' ? raw.newOrderEta : '',
+    ...rest,
+    updateClient: Boolean(rest.updateClient),
+    todayUnloading: Boolean(rest.todayUnloading ?? legacyCloseTrip),
+    todayUnloadingEta:
+      typeof rest.todayUnloadingEta === 'string' ? rest.todayUnloadingEta : '',
+    safeParking: Boolean(rest.safeParking),
+    moRefusal: Boolean(rest.moRefusal),
+    newOrder: Boolean(rest.newOrder),
+    newOrderLoaded: Boolean(rest.newOrderLoaded),
+    newOrderEta: typeof rest.newOrderEta === 'string' ? rest.newOrderEta : '',
   }
 }
 
@@ -54,9 +60,19 @@ function etaDateOf(value: string): string {
 }
 
 function etaHourOf(value: string): number {
-  if (!value || value.length < 13) return 0
-  const hour = Number(value.slice(11, 13))
-  return Number.isFinite(hour) ? hour : 0
+  if (!value) return 0
+  // "14:00" or "2026-08-16T14:00"
+  const fromTime = value.match(/^(\d{1,2}):/)
+  if (fromTime) {
+    const hour = Number(fromTime[1])
+    return Number.isFinite(hour) ? hour : 0
+  }
+  if (value.length >= 13) {
+    const hour = Number(value.slice(11, 13))
+    return Number.isFinite(hour) ? hour : 0
+  }
+  const asNum = Number(value)
+  return Number.isFinite(asNum) ? asNum : 0
 }
 
 function combineEta(date: string, hour: number | null): string {
@@ -142,7 +158,7 @@ export function TrucksTab() {
   function clearAll() {
     if (
       !window.confirm(
-        'Clear Morning Update, All trips are closed, Safe parking, MO Refusal and New Order for every truck?',
+        'Clear Morning Update, Today unloading, ETA, Safe parking, MO Refusal and New Order for every truck?',
       )
     ) {
       return
@@ -230,11 +246,39 @@ export function TrucksTab() {
             <td className="center">
               <input
                 type="checkbox"
-                checked={row.closeTrip}
+                checked={row.todayUnloading}
                 onChange={(e) =>
-                  patch(id, { closeTrip: e.target.checked })
+                  patch(id, { todayUnloading: e.target.checked })
                 }
               />
+            </td>
+            <td className="eta-cell">
+              <select
+                className="select select--compact"
+                value={
+                  row.todayUnloadingEta
+                    ? String(etaHourOf(row.todayUnloadingEta))
+                    : ''
+                }
+                onChange={(e) => {
+                  const hour =
+                    e.target.value === '' ? null : Number(e.target.value)
+                  patch(id, {
+                    todayUnloadingEta:
+                      hour === null
+                        ? ''
+                        : `${String(hour).padStart(2, '0')}:00`,
+                  })
+                }}
+                aria-label={`ETA time for ${id}`}
+              >
+                <option value="">—</option>
+                {ETA_HOURS.map((h) => (
+                  <option key={h} value={h}>
+                    {String(h).padStart(2, '0')}:00
+                  </option>
+                ))}
+              </select>
             </td>
             <td className="center">
               <input
@@ -266,7 +310,7 @@ export function TrucksTab() {
           </tr>
           {row.newOrder && (
             <tr className={`sub-row ${active ? 'row-active' : ''}`}>
-              <td colSpan={6}>
+              <td colSpan={7}>
                 <div className="new-order">
                   <span className="new-order__label">New Order</span>
                   <label className="new-order__check">
@@ -373,9 +417,10 @@ export function TrucksTab() {
                 <span>Update</span>
               </th>
               <th className="th-stack">
-                <span>All trips</span>
-                <span>are closed</span>
+                <span>Today</span>
+                <span>unloading</span>
               </th>
+              <th>ETA</th>
               <th className="th-stack">
                 <span>Safe</span>
                 <span>parking</span>
@@ -393,13 +438,13 @@ export function TrucksTab() {
           <tbody>
             {mainIds.length > 0 && (
               <tr className="fleet-group-row">
-                <td colSpan={6}>Fleet</td>
+                <td colSpan={7}>Fleet</td>
               </tr>
             )}
             {renderTruckRows(mainIds)}
             {loctrackerIds.length > 0 && (
               <tr className="fleet-group-row fleet-group-row--loctracker">
-                <td colSpan={6}>Loctracker</td>
+                <td colSpan={7}>Loctracker</td>
               </tr>
             )}
             {renderTruckRows(loctrackerIds)}

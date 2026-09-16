@@ -10,13 +10,12 @@ import type {
   OpType,
   RestHours,
   TruckId,
-  WeekendRest,
 } from '../types'
 import { wallClockMinutesForDriving } from '../utils/breaks'
 import { parseTimeInput } from '../utils/format'
 
 function emptyInstruction(): InstructionTruckState {
-  return { sent: false, weekendRest: null }
+  return { sent: false }
 }
 
 function loadInstructionState(
@@ -190,15 +189,6 @@ export function InstructionsTab() {
     persist(next)
   }
 
-  function setWeekend(id: TruckId, value: WeekendRest) {
-    const current = truckState[id] ?? emptyInstruction()
-    const next = {
-      ...truckState,
-      [id]: { ...current, weekendRest: value },
-    }
-    persist(next)
-  }
-
   const sentCount = useMemo(
     () => truckIds.filter((id) => truckState[id]?.sent).length,
     [truckState, truckIds],
@@ -241,20 +231,6 @@ export function InstructionsTab() {
           >
             {id}
           </button>
-          <select
-            className="select select--weekend"
-            aria-label={`Weekend rest for ${id}`}
-            title="Weekend Rest"
-            value={state.weekendRest ?? ''}
-            onChange={(e) => {
-              const v = e.target.value
-              setWeekend(id, v === '' ? null : (Number(v) as 24 | 47))
-            }}
-          >
-            <option value="">—</option>
-            <option value="24">24h</option>
-            <option value="47">47h</option>
-          </select>
         </li>
       )
     })

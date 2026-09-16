@@ -14,6 +14,7 @@ export interface DriverCard {
 export interface TruckRowState {
   loaded: boolean
   updateClient: boolean
+  unloadBy11: boolean
   unloaded: boolean
   informClient: boolean
   todayUnloading: boolean
@@ -24,6 +25,12 @@ export interface TruckRowState {
   newOrder: boolean
   newOrderLoaded: boolean
   newOrderEta: string
+  /** Remaining km for Arrive ETA */
+  kmLeft: number | ''
+  /** Drive hours left today for this truck */
+  driveLeftHours: number | ''
+  /** Last calculated Arrive ETA label (empty until Calc) */
+  arriveEta: string
   updatedAt: number | null
 }
 
@@ -32,6 +39,10 @@ export type OpType = 'unloading' | 'loading'
 export type WeekendRest = 24 | 47 | null
 
 export interface InstructionTruckState {
+  sent: boolean
+}
+
+export interface WeeklyTruckState {
   sent: boolean
   weekendRest: WeekendRest
 }
@@ -87,8 +98,4 @@ export interface WeeklyInstructionForm {
   driverChange: boolean
   everythingClear: boolean
   extraNotes: string
-}
-
-export interface WeeklyTruckState {
-  sent: boolean
 }

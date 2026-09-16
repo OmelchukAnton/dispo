@@ -12,15 +12,30 @@ import {
   type TruckGroup,
 } from '../data/trucks'
 import type { DriverCard, TruckId, TruckRowState } from '../types'
+import {
+  estimateParkingArrive,
+  formatArriveClock,
+} from '../utils/parkingEta'
 import { DriverPopup } from './DriverPopup'
 
 const ETA_HOURS = Array.from({ length: 24 }, (_, i) => i) // 0..23
 const STORAGE_KEY = 'dispatch-trucks-v3'
+const COL_COUNT = 12
+
+function parseOptionalNumber(value: unknown): number | '' {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value.replace(',', '.'))
+    return Number.isFinite(n) ? n : ''
+  }
+  return ''
+}
 
 function emptyRow(): TruckRowState {
   return {
     loaded: false,
     updateClient: false,
+    unloadBy11: false,
     unloaded: false,
     informClient: false,
     todayUnloading: false,
@@ -31,6 +46,9 @@ function emptyRow(): TruckRowState {
     newOrder: false,
     newOrderLoaded: false,
     newOrderEta: '',
+    kmLeft: '',
+    driveLeftHours: '',
+    arriveEta: '',
     updatedAt: null,
   }
 }
@@ -39,10 +57,13 @@ function normalizeRow(
   raw: (Partial<TruckRowState> & { closeTrip?: boolean }) | undefined,
 ): TruckRowState {
   const { closeTrip: legacyCloseTrip, ...rest } = raw ?? {}
+  const kmLeft = parseOptionalNumber(rest.kmLeft)
+  const driveLeftHours = parseOptionalNumber(rest.driveLeftHours)
   return {
     ...emptyRow(),
     ...rest,
     updateClient: Boolean(rest.updateClient),
+    unloadBy11: Boolean(rest.unloadBy11),
     todayUnloading: Boolean(rest.todayUnloading ?? legacyCloseTrip),
     todayUnloadingEta:
       typeof rest.todayUnloadingEta === 'string' ? rest.todayUnloadingEta : '',
@@ -51,6 +72,12 @@ function normalizeRow(
     newOrder: Boolean(rest.newOrder),
     newOrderLoaded: Boolean(rest.newOrderLoaded),
     newOrderEta: typeof rest.newOrderEta === 'string' ? rest.newOrderEta : '',
+    kmLeft: kmLeft === '' || (kmLeft as number) < 0 ? '' : kmLeft,
+    driveLeftHours:
+      driveLeftHours === '' || (driveLeftHours as number) < 0
+        ? ''
+        : driveLeftHours,
+    arriveEta: typeof rest.arriveEta === 'string' ? rest.arriveEta : '',
   }
 }
 
@@ -155,10 +182,33 @@ export function TrucksTab() {
     persistRows(next)
   }
 
+  function calcArriveEta(id: TruckId) {
+    const row = normalizeRow(rows[id])
+    if (row.kmLeft === '' || row.kmLeft <= 0) {
+      patch(id, { arriveEta: '' })
+      return
+    }
+    if (row.driveLeftHours === '' || row.driveLeftHours < 0) {
+      window.alert('Enter Drive left (h), then Calc')
+      return
+    }
+    const now = new Date()
+    const arrive = estimateParkingArrive({
+      now,
+      distanceKm: row.kmLeft,
+      driveLeftHours: row.driveLeftHours,
+    })
+    if (!arrive) {
+      patch(id, { arriveEta: '' })
+      return
+    }
+    patch(id, { arriveEta: formatArriveClock(arrive, now) })
+  }
+
   function clearAll() {
     if (
       !window.confirm(
-        'Clear Morning Update, Today unloading, ETA, Safe parking, MO Refusal and New Order for every truck?',
+        'Clear Morning Update, Unload before 11, Today unloading, ETA, Safe parking, MO Refusal and New Order for every truck?',
       )
     ) {
       return
@@ -207,6 +257,11 @@ export function TrucksTab() {
     [truckIds, groupTick],
   )
 
+  const unloadBy11Count = useMemo(
+    () => truckIds.filter((id) => normalizeRow(rows[id]).unloadBy11).length,
+    [rows, truckIds],
+  )
+
   function renderTruckRows(ids: TruckId[]) {
     return ids.map((id) => {
       const row = normalizeRow(rows[id])
@@ -240,6 +295,15 @@ export function TrucksTab() {
                 checked={row.updateClient}
                 onChange={(e) =>
                   patch(id, { updateClient: e.target.checked })
+                }
+              />
+            </td>
+            <td className="center">
+              <input
+                type="checkbox"
+                checked={row.unloadBy11}
+                onChange={(e) =>
+                  patch(id, { unloadBy11: e.target.checked })
                 }
               />
             </td>
@@ -307,10 +371,77 @@ export function TrucksTab() {
                 }
               />
             </td>
+            <td className="km-cell">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className="input input--km"
+                value={row.kmLeft === '' ? '' : row.kmLeft}
+                placeholder="—"
+                onChange={(e) => {
+                  const v = e.target.value.trim()
+                  if (v === '') {
+                    patch(id, { kmLeft: '', arriveEta: '' })
+                    return
+                  }
+                  const n = Number(v.replace(',', '.'))
+                  patch(id, {
+                    kmLeft: Number.isFinite(n) && n >= 0 ? n : '',
+                    arriveEta: '',
+                  })
+                }}
+                aria-label={`KM left for ${id}`}
+              />
+            </td>
+            <td className="km-cell">
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                className="input input--km"
+                value={row.driveLeftHours === '' ? '' : row.driveLeftHours}
+                placeholder="—"
+                onChange={(e) => {
+                  const v = e.target.value.trim()
+                  if (v === '') {
+                    patch(id, { driveLeftHours: '', arriveEta: '' })
+                    return
+                  }
+                  const n = Number(v.replace(',', '.'))
+                  patch(id, {
+                    driveLeftHours: Number.isFinite(n) && n >= 0 ? n : '',
+                    arriveEta: '',
+                  })
+                }}
+                aria-label={`Drive left hours for ${id}`}
+              />
+            </td>
+            <td className="center">
+              <button
+                type="button"
+                className="btn btn--primary btn--tiny"
+                disabled={
+                  row.kmLeft === '' ||
+                  row.kmLeft <= 0 ||
+                  row.driveLeftHours === ''
+                }
+                onClick={() => calcArriveEta(id)}
+              >
+                Calc
+              </button>
+            </td>
+            <td className="arrive-cell">
+              {row.arriveEta ? (
+                <strong className="arrive-eta">{row.arriveEta}</strong>
+              ) : (
+                <span className="muted">—</span>
+              )}
+            </td>
           </tr>
           {row.newOrder && (
             <tr className={`sub-row ${active ? 'row-active' : ''}`}>
-              <td colSpan={7}>
+              <td colSpan={COL_COUNT}>
                 <div className="new-order">
                   <span className="new-order__label">New Order</span>
                   <label className="new-order__check">
@@ -389,11 +520,18 @@ export function TrucksTab() {
         <div>
           <h2 className="panel__title">Trucks</h2>
           <p className="panel__hint">
-            Open truck info to edit driver / trailer or delete. Add truck via
-            the button.
+            Per truck: KM left + Drive left → Calc Arrive ETA (67 km/h, 45 min /
+            4.5h).
           </p>
         </div>
         <div className="panel__toolbar-actions">
+          <div
+            className={`unload-stat ${unloadBy11Count > 0 ? 'unload-stat--active' : ''}`}
+            title="Trucks unloaded before 11:00"
+          >
+            <span className="unload-stat__label">Unloaded before 11</span>
+            <strong className="unload-stat__value">{unloadBy11Count}</strong>
+          </div>
           <button
             type="button"
             className="btn btn--primary"
@@ -417,6 +555,10 @@ export function TrucksTab() {
                 <span>Update</span>
               </th>
               <th className="th-stack">
+                <span>Unload</span>
+                <span>before 11</span>
+              </th>
+              <th className="th-stack">
                 <span>Today</span>
                 <span>unloading</span>
               </th>
@@ -433,18 +575,31 @@ export function TrucksTab() {
                 <span>New</span>
                 <span>Order</span>
               </th>
+              <th className="th-stack">
+                <span>KM</span>
+                <span>left</span>
+              </th>
+              <th className="th-stack">
+                <span>Drive</span>
+                <span>left (h)</span>
+              </th>
+              <th></th>
+              <th className="th-stack">
+                <span>Arrive</span>
+                <span>ETA</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {mainIds.length > 0 && (
               <tr className="fleet-group-row">
-                <td colSpan={7}>Fleet</td>
+                <td colSpan={COL_COUNT}>Fleet</td>
               </tr>
             )}
             {renderTruckRows(mainIds)}
             {loctrackerIds.length > 0 && (
               <tr className="fleet-group-row fleet-group-row--loctracker">
-                <td colSpan={7}>Loctracker</td>
+                <td colSpan={COL_COUNT}>Loctracker</td>
               </tr>
             )}
             {renderTruckRows(loctrackerIds)}

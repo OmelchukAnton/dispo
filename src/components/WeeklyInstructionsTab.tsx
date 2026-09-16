@@ -6,6 +6,7 @@ import {
 } from '../data/trucks'
 import type {
   TruckId,
+  WeekendRest,
   WeeklyInstructionForm,
   WeeklyMondayAction,
   WeeklyTodayKind,
@@ -19,23 +20,63 @@ import {
 } from '../utils/weeklyInstructions'
 
 const STORAGE_KEY = 'dispatch-weekly-v1'
+const LEGACY_INSTRUCTIONS_KEY = 'dispatch-instructions-v1'
 
 function emptyTruck(): WeeklyTruckState {
-  return { sent: false }
+  return { sent: false, weekendRest: null }
+}
+
+function loadLegacyWeekendMap(): Record<string, WeekendRest> {
+  const raw = localStorage.getItem(LEGACY_INSTRUCTIONS_KEY)
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as Record<
+      string,
+      { weekendRest?: WeekendRest }
+    >
+    const out: Record<string, WeekendRest> = {}
+    for (const [id, state] of Object.entries(parsed)) {
+      if (state?.weekendRest === 24 || state?.weekendRest === 47) {
+        out[id] = state.weekendRest
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function normalizeWeekly(
+  raw: Partial<WeeklyTruckState> | undefined,
+  legacyWeekend?: WeekendRest,
+): WeeklyTruckState {
+  const weekend =
+    raw?.weekendRest === 24 || raw?.weekendRest === 47
+      ? raw.weekendRest
+      : legacyWeekend === 24 || legacyWeekend === 47
+        ? legacyWeekend
+        : null
+  return {
+    sent: Boolean(raw?.sent),
+    weekendRest: weekend,
+  }
 }
 
 function loadTruckState(ids: TruckId[]): Record<string, WeeklyTruckState> {
   const raw = localStorage.getItem(STORAGE_KEY)
-  let parsed: Record<string, WeeklyTruckState> = {}
+  let parsed: Record<string, Partial<WeeklyTruckState>> = {}
   if (raw) {
     try {
-      parsed = JSON.parse(raw) as Record<string, WeeklyTruckState>
+      parsed = JSON.parse(raw) as Record<string, Partial<WeeklyTruckState>>
     } catch {
       parsed = {}
     }
   }
+  const legacy = loadLegacyWeekendMap()
   const init: Record<string, WeeklyTruckState> = {}
-  for (const id of ids) init[id] = parsed[id] ?? emptyTruck()
+  for (const id of ids) {
+    init[id] = normalizeWeekly(parsed[id], legacy[id])
+  }
   return init
 }
 
@@ -113,6 +154,14 @@ export function WeeklyInstructionsTab() {
     })
   }
 
+  function setWeekend(id: TruckId, value: WeekendRest) {
+    const current = truckState[id] ?? emptyTruck()
+    persist({
+      ...truckState,
+      [id]: { ...current, weekendRest: value },
+    })
+  }
+
   const sentCount = useMemo(
     () => truckIds.filter((id) => truckState[id]?.sent).length,
     [truckState, truckIds],
@@ -152,6 +201,20 @@ export function WeeklyInstructionsTab() {
           >
             {id}
           </button>
+          <select
+            className="select select--weekend"
+            aria-label={`Weekend rest for ${id}`}
+            title="Weekend Rest"
+            value={state.weekendRest ?? ''}
+            onChange={(e) => {
+              const v = e.target.value
+              setWeekend(id, v === '' ? null : (Number(v) as 24 | 47))
+            }}
+          >
+            <option value="">—</option>
+            <option value="24">24h</option>
+            <option value="47">47h</option>
+          </select>
           <button
             type="button"
             className="btn btn--ghost btn--tiny"

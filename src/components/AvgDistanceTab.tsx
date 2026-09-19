@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   activeDistanceRows,
   averageDistance,
@@ -15,6 +15,28 @@ interface FileSlot {
   rows: DistanceRow[]
 }
 
+const REASONS_STORAGE_KEY = 'dispatch-avg-distance-reasons-v1'
+
+function reasonKey(row: DistanceRow): string {
+  return `${row.group}:${row.plate}`
+}
+
+function loadReasons(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(REASONS_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return {}
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === 'string') out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
 async function readFile(file: File): Promise<ArrayBuffer> {
   return file.arrayBuffer()
 }
@@ -23,10 +45,24 @@ export function AvgDistanceTab() {
   const [fleet, setFleet] = useState<FileSlot | null>(null)
   const [loctracker, setLoctracker] = useState<FileSlot | null>(null)
   const [error, setError] = useState('')
+  const [reasons, setReasons] = useState<Record<string, string>>(loadReasons)
+
+  useEffect(() => {
+    localStorage.setItem(REASONS_STORAGE_KEY, JSON.stringify(reasons))
+  }, [reasons])
 
   const allRows = useMemo(() => {
     return [...(fleet?.rows ?? []), ...(loctracker?.rows ?? [])]
   }, [fleet, loctracker])
+
+  const sortedRows = useMemo(() => {
+    return [...allRows].sort((a, b) => {
+      const aLow = a.distance < 350
+      const bLow = b.distance < 350
+      if (aLow !== bLow) return aLow ? -1 : 1
+      return a.distance - b.distance
+    })
+  }, [allRows])
 
   const activeRows = useMemo(() => activeDistanceRows(allRows), [allRows])
   const inactiveCount = allRows.length - activeRows.length
@@ -42,6 +78,19 @@ export function AvgDistanceTab() {
   const overallAvg = useMemo(() => averageDistance(allRows), [allRows])
   const fleetSum = useMemo(() => sumDistance(fleet?.rows ?? []), [fleet])
   const locSum = useMemo(() => sumDistance(loctracker?.rows ?? []), [loctracker])
+
+  function setReason(row: DistanceRow, value: string) {
+    const key = reasonKey(row)
+    setReasons((prev) => {
+      if (!value.trim()) {
+        if (!(key in prev)) return prev
+        const next = { ...prev }
+        delete next[key]
+        return next
+      }
+      return { ...prev, [key]: value }
+    })
+  }
 
   async function onFleetFile(file: File | null) {
     if (!file) return
@@ -77,7 +126,8 @@ export function AvgDistanceTab() {
       <p className="panel__hint">
         Fleet = <strong>FMS Distance</strong> (odometer fallback). Loctracker ={' '}
         <strong>Odometer driven distance</strong>. GPS is not used. Average
-        only for active trucks (Distance &gt; 0). Under 350 km highlighted.
+        only for active trucks (Distance &gt; 0). Under 350 km highlighted —
+        add a reason.
       </p>
 
       <div className="upload-grid">
@@ -175,18 +225,21 @@ export function AvgDistanceTab() {
                     <th>Group</th>
                     <th>Truck</th>
                     <th>Distance (km)</th>
+                    <th>Reason</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {allRows.map((r) => {
+                  {sortedRows.map((r) => {
                     const active = isActiveDistance(r.distance)
+                    const low = r.distance < 350
                     const className = !active
                       ? 'row-inactive-distance'
-                      : r.distance < 350
+                      : low
                         ? 'row-low-distance'
                         : undefined
+                    const key = reasonKey(r)
                     return (
-                      <tr key={`${r.group}-${r.plate}`} className={className}>
+                      <tr key={key} className={className}>
                         <td>
                           {r.group === 'fleet' ? 'Fleet' : 'Loctracker'}
                         </td>
@@ -194,6 +247,20 @@ export function AvgDistanceTab() {
                         <td>
                           {formatKm(r.distance)}
                           {!active ? ' · inactive' : ''}
+                        </td>
+                        <td>
+                          {low ? (
+                            <input
+                              type="text"
+                              className="input input--reason"
+                              value={reasons[key] ?? ''}
+                              onChange={(e) => setReason(r, e.target.value)}
+                              placeholder="Reason"
+                              aria-label={`Reason for ${r.plate}`}
+                            />
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
                         </td>
                       </tr>
                     )

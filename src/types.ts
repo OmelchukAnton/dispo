@@ -17,7 +17,8 @@ export interface TruckRowState {
   unloadBy11: boolean
   unloaded: boolean
   informClient: boolean
-  todayUnloading: boolean
+  /** Short CMR date on checklist, e.g. 20.09 */
+  cmr: string
   todayUnloadingEta: string
   safeParking: boolean
   moRefusal: boolean

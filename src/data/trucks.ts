@@ -313,6 +313,46 @@ export function setTruckGroup(id: TruckId, group: TruckGroup): void {
   saveFleetIds(loadFleetIds())
 }
 
+/**
+ * Replace all trucks in Fleet or Loctracker with `newIds`.
+ * The other group is kept. Plates moved into the target group leave the other.
+ */
+export function replaceGroupTrucks(
+  group: TruckGroup,
+  newIds: TruckId[],
+): TruckId[] {
+  const clean = [
+    ...new Set(newIds.map((id) => normalizeTruckId(id)).filter(Boolean)),
+  ]
+  const currentLoc = loadLoctrackerIds()
+
+  if (group === 'loctracker') {
+    const fleetOnly = loadFleetIds().filter((id) => !currentLoc.includes(id))
+    // New loc plates must not stay only in fleet naming — rebuild loc + fleet
+    const fleetWithoutOverlap = fleetOnly.filter((id) => !clean.includes(id))
+    saveLoctrackerIds(clean)
+    const next = orderFleetIds([...fleetWithoutOverlap, ...clean], clean)
+    saveFleetIds(next)
+    return next
+  }
+
+  // Replace fleet (non-loctracker); keep remaining loctracker plates
+  const locKeep = currentLoc.filter((id) => !clean.includes(id))
+  saveLoctrackerIds(locKeep)
+  const next = orderFleetIds([...clean, ...locKeep], locKeep)
+  saveFleetIds(next)
+  return next
+}
+
+/** Parse pasted truck list: newlines, commas, spaces, semicolons. */
+export function parseTruckListText(text: string): TruckId[] {
+  const parts = text
+    .split(/[\s,;|/]+/)
+    .map((p) => normalizeTruckId(p))
+    .filter(Boolean)
+  return [...new Set(parts)]
+}
+
 export function normalizeTruckId(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, '')
 }

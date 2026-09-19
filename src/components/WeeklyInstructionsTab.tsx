@@ -4,6 +4,12 @@ import {
   loadFleetIds,
   splitFleetGroups,
 } from '../data/trucks'
+import {
+  emptyWeeklyTruck,
+  loadWeeklyTruckState,
+  saveWeeklyTruckState,
+  WEEKLY_CHANGED_EVENT,
+} from '../data/weeklyTrucks'
 import type {
   TruckId,
   WeekendRest,
@@ -19,67 +25,6 @@ import {
   defaultWeeklyForm,
 } from '../utils/weeklyInstructions'
 
-const STORAGE_KEY = 'dispatch-weekly-v1'
-const LEGACY_INSTRUCTIONS_KEY = 'dispatch-instructions-v1'
-
-function emptyTruck(): WeeklyTruckState {
-  return { sent: false, weekendRest: null }
-}
-
-function loadLegacyWeekendMap(): Record<string, WeekendRest> {
-  const raw = localStorage.getItem(LEGACY_INSTRUCTIONS_KEY)
-  if (!raw) return {}
-  try {
-    const parsed = JSON.parse(raw) as Record<
-      string,
-      { weekendRest?: WeekendRest }
-    >
-    const out: Record<string, WeekendRest> = {}
-    for (const [id, state] of Object.entries(parsed)) {
-      if (state?.weekendRest === 24 || state?.weekendRest === 47) {
-        out[id] = state.weekendRest
-      }
-    }
-    return out
-  } catch {
-    return {}
-  }
-}
-
-function normalizeWeekly(
-  raw: Partial<WeeklyTruckState> | undefined,
-  legacyWeekend?: WeekendRest,
-): WeeklyTruckState {
-  const weekend =
-    raw?.weekendRest === 24 || raw?.weekendRest === 47
-      ? raw.weekendRest
-      : legacyWeekend === 24 || legacyWeekend === 47
-        ? legacyWeekend
-        : null
-  return {
-    sent: Boolean(raw?.sent),
-    weekendRest: weekend,
-  }
-}
-
-function loadTruckState(ids: TruckId[]): Record<string, WeeklyTruckState> {
-  const raw = localStorage.getItem(STORAGE_KEY)
-  let parsed: Record<string, Partial<WeeklyTruckState>> = {}
-  if (raw) {
-    try {
-      parsed = JSON.parse(raw) as Record<string, Partial<WeeklyTruckState>>
-    } catch {
-      parsed = {}
-    }
-  }
-  const legacy = loadLegacyWeekendMap()
-  const init: Record<string, WeeklyTruckState> = {}
-  for (const id of ids) {
-    init[id] = normalizeWeekly(parsed[id], legacy[id])
-  }
-  return init
-}
-
 export function WeeklyInstructionsTab() {
   const [form, setForm] = useState<WeeklyInstructionForm>(() =>
     defaultWeeklyForm(),
@@ -88,7 +33,7 @@ export function WeeklyInstructionsTab() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [truckIds, setTruckIds] = useState<TruckId[]>(() => loadFleetIds())
   const [truckState, setTruckState] = useState(() =>
-    loadTruckState(loadFleetIds()),
+    loadWeeklyTruckState(loadFleetIds()),
   )
 
   useEffect(() => {
@@ -97,27 +42,34 @@ export function WeeklyInstructionsTab() {
       setTruckIds(ids)
       setTruckState((prev) => {
         const next: Record<string, WeeklyTruckState> = {}
-        for (const id of ids) next[id] = prev[id] ?? emptyTruck()
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+        for (const id of ids) next[id] = prev[id] ?? emptyWeeklyTruck()
+        saveWeeklyTruckState(next)
         return next
       })
     }
+    function syncWeekly() {
+      setTruckState(loadWeeklyTruckState(loadFleetIds()))
+    }
     window.addEventListener(FLEET_CHANGED_EVENT, syncFleet)
-    return () => window.removeEventListener(FLEET_CHANGED_EVENT, syncFleet)
+    window.addEventListener(WEEKLY_CHANGED_EVENT, syncWeekly)
+    return () => {
+      window.removeEventListener(FLEET_CHANGED_EVENT, syncFleet)
+      window.removeEventListener(WEEKLY_CHANGED_EVENT, syncWeekly)
+    }
   }, [])
 
   function persist(next: Record<string, WeeklyTruckState>) {
     setTruckState(next)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    saveWeeklyTruckState(next)
   }
 
   function patchForm(partial: Partial<WeeklyInstructionForm>) {
     setForm((prev) => {
       const next = { ...prev, ...partial }
-      // Long pause: default tonight to pull chip if still on 9h from short template
+      // Long pause: tonight = 9/11h rest; chip is pulled tomorrow on parking
       if (partial.pauseKind === 'long' && prev.pauseKind === 'short') {
-        if (prev.tonightPause === '9' || prev.tonightPause === '11') {
-          next.tonightPause = 'pull_chip'
+        if (prev.tonightPause === 'pull_chip' || prev.tonightPause === 'none') {
+          next.tonightPause = '9'
         }
         next.envelopes = true
       }
@@ -138,7 +90,7 @@ export function WeeklyInstructionsTab() {
     try {
       await navigator.clipboard.writeText(text)
       setCopiedId(id)
-      const current = truckState[id] ?? emptyTruck()
+      const current = truckState[id] ?? emptyWeeklyTruck()
       persist({ ...truckState, [id]: { ...current, sent: true } })
       window.setTimeout(() => setCopiedId(null), 1500)
     } catch {
@@ -147,7 +99,7 @@ export function WeeklyInstructionsTab() {
   }
 
   function toggleSent(id: TruckId) {
-    const current = truckState[id] ?? emptyTruck()
+    const current = truckState[id] ?? emptyWeeklyTruck()
     persist({
       ...truckState,
       [id]: { ...current, sent: !current.sent },
@@ -155,7 +107,7 @@ export function WeeklyInstructionsTab() {
   }
 
   function setWeekend(id: TruckId, value: WeekendRest) {
-    const current = truckState[id] ?? emptyTruck()
+    const current = truckState[id] ?? emptyWeeklyTruck()
     persist({
       ...truckState,
       [id]: { ...current, weekendRest: value },
@@ -178,7 +130,7 @@ export function WeeklyInstructionsTab() {
     }
     const next = { ...truckState }
     for (const id of truckIds) {
-      next[id] = { ...(next[id] ?? emptyTruck()), sent: false }
+      next[id] = { ...(next[id] ?? emptyWeeklyTruck()), sent: false }
     }
     persist(next)
   }
@@ -190,7 +142,7 @@ export function WeeklyInstructionsTab() {
 
   function renderFleet(ids: TruckId[]) {
     return ids.map((id) => {
-      const state = truckState[id] ?? emptyTruck()
+      const state = truckState[id] ?? emptyWeeklyTruck()
       return (
         <li key={id} className="fleet-chip fleet-chip--weekly">
           <button
@@ -277,7 +229,7 @@ export function WeeklyInstructionsTab() {
                 checked={form.pauseKind === 'long'}
                 onChange={() => patchForm({ pauseKind: 'long' })}
               />
-              Long 47h+ no chip
+              Long 47h+ (chip out tomorrow)
             </label>
           </fieldset>
 
@@ -311,7 +263,6 @@ export function WeeklyInstructionsTab() {
             >
               <option value="9">9h</option>
               <option value="11">11h</option>
-              <option value="pull_chip">Pull out chip</option>
               <option value="none">None</option>
             </select>
           </fieldset>

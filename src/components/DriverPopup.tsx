@@ -9,8 +9,6 @@ const FIELDS: { key: keyof DriverCard; label: string }[] = [
   { key: 'truckCompany', label: 'Truck / company' },
   { key: 'trailer', label: 'Trailer' },
   { key: 'mechanic', label: 'Mechanic' },
-  { key: 'missing', label: 'Missing' },
-  { key: 'cmrDate', label: 'CMR date' },
 ]
 
 interface BaseProps {

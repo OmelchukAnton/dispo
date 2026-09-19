@@ -76,43 +76,52 @@ function todayLineRu(f: WeeklyInstructionForm): string {
 }
 
 function pauseLineEn(f: WeeklyInstructionForm): string | null {
-  if (f.tonightPause === 'none') return null
-  if (f.tonightPause === 'pull_chip') {
-    return 'and pull out the chip'
-  }
-  return `make pause ${f.tonightPause}h`
+  if (f.tonightPause === 'none' || f.tonightPause === 'pull_chip') return null
+  return `make ${f.tonightPause}h pause`
 }
 
 function pauseLineRu(f: WeeklyInstructionForm): string | null {
-  if (f.tonightPause === 'none') return null
-  if (f.tonightPause === 'pull_chip') {
-    return 'и сразу вытаскиваем чип'
-  }
+  if (f.tonightPause === 'none' || f.tonightPause === 'pull_chip') return null
   return `делайте паузу ${f.tonightPause}ч`
+}
+
+/** Chip is pulled on tomorrow's parking (long pause / pull_chip). */
+function pullChipTomorrow(f: WeeklyInstructionForm): boolean {
+  return f.pauseKind === 'long' || f.tonightPause === 'pull_chip'
 }
 
 function tomorrowGoalEn(f: WeeklyInstructionForm): string {
   const start = fmtTime(f.tomorrowStart)
   const startBit = start ? `tomorrow start ${start}` : 'tomorrow start'
+  let goal: string
   if (f.tomorrowGoal === 'close_to_delivery') {
-    return `${startBit} go as close as possible to the delivery place and stay on next parking from the task`
+    goal = `${startBit} go as close as possible to the delivery place and stay on next parking from the task`
+  } else if (f.tomorrowGoal === 'custom' && f.tomorrowCustom.trim()) {
+    goal = `${startBit} ${f.tomorrowCustom.trim()}`
+  } else {
+    goal = `${startBit} go to the next parking and stay on next parking from the task`
   }
-  if (f.tomorrowGoal === 'custom' && f.tomorrowCustom.trim()) {
-    return `${startBit} ${f.tomorrowCustom.trim()}`
+  if (pullChipTomorrow(f)) {
+    goal += ' and pull out the chip'
   }
-  return `${startBit} go to the next parking and stay on next parking from the task`
+  return goal
 }
 
 function tomorrowGoalRu(f: WeeklyInstructionForm): string {
   const start = fmtTime(f.tomorrowStart)
   const startBit = start ? `завтра старт ${start}` : 'завтра старт'
+  let goal: string
   if (f.tomorrowGoal === 'close_to_delivery') {
-    return `${startBit} доезжайте как можно ближе к месту выгрузки и становитесь на следующий паркинг по заданию`
+    goal = `${startBit} доезжайте как можно ближе к месту выгрузки и становитесь на следующий паркинг по заданию`
+  } else if (f.tomorrowGoal === 'custom' && f.tomorrowCustom.trim()) {
+    goal = `${startBit} ${f.tomorrowCustom.trim()}`
+  } else {
+    goal = `${startBit} едем на следующий паркинг по заданию и становимся на нём`
   }
-  if (f.tomorrowGoal === 'custom' && f.tomorrowCustom.trim()) {
-    return `${startBit} ${f.tomorrowCustom.trim()}`
+  if (pullChipTomorrow(f)) {
+    goal += ' и вытаскиваем чип'
   }
-  return `${startBit} едем на следующий паркинг по заданию и становимся на нём`
+  return goal
 }
 
 function trafficBanEn(f: WeeklyInstructionForm): string | null {
@@ -235,12 +244,9 @@ function buildEn(f: WeeklyInstructionForm): string {
       : 'This weekend we have a long pause of at least 47 hours without chip in truck.'
 
   const todayParts = [todayLineEn(f), pauseLineEn(f)].filter(Boolean)
-  const today = todayParts.join(', ') + '.'
+  const today = todayParts.join(' ') + '.'
 
-  const tomorrow = [
-    tomorrowGoalEn(f) + '.',
-    trafficBanEn(f),
-  ]
+  const tomorrow = [tomorrowGoalEn(f) + '.', trafficBanEn(f)]
     .filter(Boolean)
     .join(' ')
 
@@ -263,12 +269,9 @@ function buildRu(f: WeeklyInstructionForm): string {
       : 'На этих выходных у нас длинная пауза минимум 47 часов без чипа.'
 
   const todayParts = [todayLineRu(f), pauseLineRu(f)].filter(Boolean)
-  const today = todayParts.join(' и ') + '.'
+  const today = todayParts.join(' ') + '.'
 
-  const tomorrow = [
-    tomorrowGoalRu(f) + '.',
-    trafficBanRu(f),
-  ]
+  const tomorrow = [tomorrowGoalRu(f) + '.', trafficBanRu(f)]
     .filter(Boolean)
     .join(' ')
 

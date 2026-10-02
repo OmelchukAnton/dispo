@@ -1,5 +1,8 @@
 export type TruckId = string
 
+/** Company tags shown in Trucks column */
+export type TruckCompanyTag = 'prt' | 'h1' | 'ha'
+
 export interface DriverCard {
   driverName: string
   birthDate: string
@@ -9,6 +12,10 @@ export interface DriverCard {
   mechanic: string
   missing: string
   cmrDate: string
+  /** Free-form notes — highlight info icon when filled */
+  notes: string
+  /** Company tag: PRT (Periti), H1, HA */
+  companyTag: TruckCompanyTag | null
 }
 
 export interface TruckRowState {
@@ -21,6 +28,8 @@ export interface TruckRowState {
   cmr: string
   todayUnloadingEta: string
   safeParking: boolean
+  /** Order number for Safe parking request */
+  safeParkingOrder: string
   moRefusal: boolean
   fixHour: number | ''
   newOrder: boolean

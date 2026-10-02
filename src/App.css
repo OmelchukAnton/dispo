@@ -426,6 +426,40 @@
   border-color: #efc48a;
 }
 
+.company-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0.08rem 0.28rem;
+  border-radius: 5px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.company-tag--prt {
+  color: #5b21b6;
+  background: #ede9fe;
+  border-color: #c4b5fd;
+}
+
+.company-tag--h1 {
+  color: #1e3a6e;
+  background: #dce6f8;
+  border-color: #a9bbe3;
+}
+
+.company-tag--ha {
+  color: #6b2d6e;
+  background: #f0dff2;
+  border-color: #d4b0d8;
+}
+
 .th-pause-sort {
   display: inline-flex;
   align-items: center;
@@ -470,6 +504,13 @@
 .truck-id {
   font-family: 'IBM Plex Mono', monospace;
   font-weight: 600;
+}
+
+.truck-id--weekly-sent {
+  color: #15803d;
+  padding: 0.08rem 0.32rem;
+  border-radius: 5px;
+  border: 1px solid #86efac;
 }
 
 .data-table--trucks {
@@ -748,6 +789,19 @@
   height: 1.7rem;
 }
 
+.safe-parking {
+  border-left-color: #5b8f72;
+}
+
+.safe-parking .input--safe-order {
+  min-width: 8rem;
+  max-width: 12rem;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.82rem;
+  height: 1.7rem;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
 .input--datetime {
   width: auto;
   min-width: 12.5rem;
@@ -764,6 +818,13 @@
   font-weight: 700;
   cursor: pointer;
   line-height: 1;
+}
+
+.info-btn--notes {
+  color: #9a6700;
+  background: #fff3cd;
+  border-color: #e0b84a;
+  box-shadow: 0 0 0 2px rgba(224, 184, 74, 0.25);
 }
 
 .select,
@@ -934,8 +995,43 @@
   width: 4.6rem;
 }
 
+.fleet-chip--safe {
+  width: 4.8rem;
+  padding: 0.18rem;
+  border-radius: 8px;
+  border: 1px solid #c5d0d8;
+  background: #fff8f8;
+}
+
 .fleet-chip--weekly {
   width: 5.6rem;
+}
+
+.safe-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.02rem 0.15rem;
+  border-radius: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
+  color: #9f1239;
+  background: #ffe4e6;
+  border: 1px solid #fda4af;
+  cursor: pointer;
+  user-select: none;
+}
+
+.safe-badge:hover:not(:disabled) {
+  background: #fecdd3;
+}
+
+.safe-badge:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .instructions-form .select {
@@ -1415,10 +1511,20 @@
   gap: 0.25rem;
 }
 
+.truck-form__field--wide {
+  grid-column: 1 / -1;
+}
+
 .truck-form__field > span {
   font-size: 0.8rem;
   color: var(--muted);
   font-weight: 600;
+}
+
+.truck-form .input--textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+  font-family: inherit;
 }
 
 @media (max-width: 560px) {

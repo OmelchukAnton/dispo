@@ -5,6 +5,11 @@ import {
   loadFleetIds,
   splitFleetGroups,
 } from '../data/trucks'
+import {
+  loadSafeParkingMap,
+  TRUCKS_ROWS_CHANGED_EVENT,
+  type SafeParkingInfo,
+} from '../data/truckRows'
 import type {
   InstructionTruckState,
   OpType,
@@ -100,6 +105,10 @@ export function InstructionsTab() {
   const [truckState, setTruckState] = useState(() =>
     loadInstructionState(loadFleetIds()),
   )
+  const [safeParking, setSafeParking] = useState<
+    Record<string, SafeParkingInfo>
+  >(() => loadSafeParkingMap(loadFleetIds()))
+  const [copiedSafeId, setCopiedSafeId] = useState<string | null>(null)
 
   useEffect(() => {
     function syncFleet() {
@@ -111,9 +120,17 @@ export function InstructionsTab() {
         localStorage.setItem('dispatch-instructions-v1', JSON.stringify(next))
         return next
       })
+      setSafeParking(loadSafeParkingMap(ids))
+    }
+    function syncSafeParking() {
+      setSafeParking(loadSafeParkingMap(loadFleetIds()))
     }
     window.addEventListener(FLEET_CHANGED_EVENT, syncFleet)
-    return () => window.removeEventListener(FLEET_CHANGED_EVENT, syncFleet)
+    window.addEventListener(TRUCKS_ROWS_CHANGED_EVENT, syncSafeParking)
+    return () => {
+      window.removeEventListener(FLEET_CHANGED_EVENT, syncFleet)
+      window.removeEventListener(TRUCKS_ROWS_CHANGED_EVENT, syncSafeParking)
+    }
   }, [])
 
   function persist(next: Record<string, InstructionTruckState>) {
@@ -221,8 +238,14 @@ export function InstructionsTab() {
   function renderFleetChips(ids: TruckId[]) {
     return ids.map((id) => {
       const state = truckState[id] ?? emptyInstruction()
+      const safe = safeParking[id]
+      const needsSafe = Boolean(safe?.safeParking)
+      const order = safe?.order ?? ''
       return (
-        <li key={id} className="fleet-chip">
+        <li
+          key={id}
+          className={`fleet-chip${needsSafe ? ' fleet-chip--safe' : ''}`}
+        >
           <button
             type="button"
             className={`fleet-truck ${state.sent ? 'is-sent' : ''}`}
@@ -231,15 +254,42 @@ export function InstructionsTab() {
           >
             {id}
           </button>
+          {needsSafe && (
+            <button
+              type="button"
+              className="safe-badge"
+              disabled={!order}
+              onClick={() => void copySafeOrder(id, order)}
+              title={
+                order
+                  ? `Copy order ${order}`
+                  : 'No order number — set it on Trucks → Safe'
+              }
+            >
+              {copiedSafeId === id ? 'OK' : 'SAFE'}
+            </button>
+          )}
         </li>
       )
     })
   }
 
+  async function copySafeOrder(id: TruckId, order: string) {
+    const text = order.trim()
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedSafeId(id)
+      window.setTimeout(() => setCopiedSafeId(null), 1500)
+    } catch {
+      // ignore clipboard errors
+    }
+  }
+
   return (
     <section className="panel panel--instructions">
       <div className="calc-card">
-        <h2 className="panel__title">Generate instructions</h2>
+        <h2 className="panel__title">Daily instructions</h2>
         <p className="panel__hint">
           Includes 45 min break every 4.5h driving. Arrive by = next day time.
         </p>

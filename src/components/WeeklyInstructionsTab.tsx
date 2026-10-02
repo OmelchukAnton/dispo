@@ -135,6 +135,30 @@ export function WeeklyInstructionsTab() {
     persist(next)
   }
 
+  const pause24Count = useMemo(
+    () => truckIds.filter((id) => truckState[id]?.weekendRest === 24).length,
+    [truckState, truckIds],
+  )
+  const pause47Count = useMemo(
+    () => truckIds.filter((id) => truckState[id]?.weekendRest === 47).length,
+    [truckState, truckIds],
+  )
+  const pauseFlipCount = pause24Count + pause47Count
+
+  function flipWeekendPauses() {
+    if (pauseFlipCount === 0) return
+    const next = { ...truckState }
+    for (const id of truckIds) {
+      const current = next[id] ?? emptyWeeklyTruck()
+      if (current.weekendRest === 24) {
+        next[id] = { ...current, weekendRest: 47 }
+      } else if (current.weekendRest === 47) {
+        next[id] = { ...current, weekendRest: 24 }
+      }
+    }
+    persist(next)
+  }
+
   const { main: mainIds, loctracker: loctrackerIds } = useMemo(
     () => splitFleetGroups(truckIds),
     [truckIds],
@@ -506,6 +530,19 @@ export function WeeklyInstructionsTab() {
           <h3 className="panel__subtitle">Copy per truck</h3>
           <div className="panel__toolbar-actions">
             <span className="badge">{sentCount} sent</span>
+            <button
+              type="button"
+              className="btn btn--ghost btn--tiny"
+              disabled={pauseFlipCount === 0}
+              onClick={flipWeekendPauses}
+              title={
+                pauseFlipCount === 0
+                  ? 'No weekend pauses set'
+                  : `Flip weekend pauses: ${pause24Count}×24h ↔ ${pause47Count}×47h`
+              }
+            >
+              24 ↔ 47
+            </button>
             <button
               type="button"
               className="btn btn--danger btn--tiny"

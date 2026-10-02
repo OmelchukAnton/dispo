@@ -1,14 +1,24 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { TruckGroup } from '../data/trucks'
-import type { DriverCard, TruckId } from '../types'
+import type { DriverCard, TruckCompanyTag, TruckId } from '../types'
 
-const FIELDS: { key: keyof DriverCard; label: string }[] = [
+const FIELDS: {
+  key: Exclude<keyof DriverCard, 'companyTag' | 'notes'>
+  label: string
+}[] = [
   { key: 'driverName', label: 'Driver name' },
   { key: 'birthDate', label: 'Birth date' },
   { key: 'employeeId', label: 'Employee ID' },
   { key: 'truckCompany', label: 'Truck / company' },
   { key: 'trailer', label: 'Trailer' },
   { key: 'mechanic', label: 'Mechanic' },
+]
+
+const COMPANY_OPTIONS: { value: TruckCompanyTag | ''; label: string }[] = [
+  { value: '', label: '—' },
+  { value: 'prt', label: 'PRT · Periti' },
+  { value: 'h1', label: 'H1' },
+  { value: 'ha', label: 'HA' },
 ]
 
 interface BaseProps {
@@ -42,6 +52,8 @@ function emptyForm(truckId = ''): DriverCard {
     mechanic: '',
     missing: '',
     cmrDate: '',
+    notes: '',
+    companyTag: null,
   }
 }
 
@@ -69,7 +81,10 @@ export function DriverPopup(props: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [props])
 
-  function patchField(key: keyof DriverCard, value: string) {
+  function patchField(
+    key: Exclude<keyof DriverCard, 'companyTag'>,
+    value: string,
+  ) {
     setCard((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -171,6 +186,39 @@ export function DriverPopup(props: Props) {
               />
             </label>
           ))}
+
+          <label className="truck-form__field">
+            <span>Company tag</span>
+            <select
+              className="select"
+              value={card.companyTag ?? ''}
+              onChange={(e) => {
+                const v = e.target.value
+                setCard((prev) => ({
+                  ...prev,
+                  companyTag:
+                    v === 'prt' || v === 'h1' || v === 'ha' ? v : null,
+                }))
+              }}
+            >
+              {COMPANY_OPTIONS.map((opt) => (
+                <option key={opt.value || 'none'} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="truck-form__field truck-form__field--wide">
+            <span>Notes</span>
+            <textarea
+              className="input input--textarea"
+              rows={3}
+              value={card.notes}
+              onChange={(e) => patchField('notes', e.target.value)}
+              placeholder="Notes…"
+            />
+          </label>
         </div>
 
         <footer className="modal__footer">

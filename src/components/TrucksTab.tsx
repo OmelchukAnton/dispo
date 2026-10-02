@@ -13,6 +13,10 @@ import {
   type TruckGroup,
 } from '../data/trucks'
 import {
+  notifyTruckRowsChanged,
+  TRUCKS_ROWS_STORAGE_KEY,
+} from '../data/truckRows'
+import {
   emptyWeeklyTruck,
   loadWeeklyTruckState,
   WEEKLY_CHANGED_EVENT,
@@ -38,7 +42,7 @@ import { ReplaceTrucksPopup } from './ReplaceTrucksPopup'
 
 const ETA_HOURS = Array.from({ length: 14 }, (_, i) => i + 5) // 5..18
 const ETA_NOT_TODAY = 'NOT_TODAY'
-const STORAGE_KEY = 'dispatch-trucks-v3'
+const STORAGE_KEY = TRUCKS_ROWS_STORAGE_KEY
 const COL_COUNT = 12
 
 function todayEtaSelectValue(value: string): string {
@@ -66,6 +70,7 @@ function emptyRow(): TruckRowState {
     cmr: '',
     todayUnloadingEta: '',
     safeParking: false,
+    safeParkingOrder: '',
     moRefusal: false,
     fixHour: '',
     newOrder: false,
@@ -99,6 +104,8 @@ function normalizeRow(
       typeof rest.todayUnloadingEta === 'string' ? rest.todayUnloadingEta : '',
     cmr: typeof rest.cmr === 'string' ? rest.cmr : '',
     safeParking: Boolean(rest.safeParking),
+    safeParkingOrder:
+      typeof rest.safeParkingOrder === 'string' ? rest.safeParkingOrder : '',
     moRefusal: Boolean(rest.moRefusal),
     newOrder: Boolean(rest.newOrder),
     newOrderLoaded: Boolean(rest.newOrderLoaded),
@@ -173,6 +180,7 @@ export function TrucksTab() {
   >({})
   const [pauseSort, setPauseSort] = useState<null | 24 | 47>(null)
   const [truckQuery, setTruckQuery] = useState('')
+  const [copiedSafeId, setCopiedSafeId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [popup, setPopup] = useState<PopupState>(null)
@@ -240,6 +248,7 @@ export function TrucksTab() {
   function persistRows(next: Record<string, TruckRowState>) {
     setRows(next)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    notifyTruckRowsChanged()
   }
 
   function patch(id: TruckId, partial: Partial<TruckRowState>) {
@@ -252,6 +261,18 @@ export function TrucksTab() {
       },
     }
     persistRows(next)
+  }
+
+  async function copySafeOrder(id: TruckId) {
+    const order = normalizeRow(rows[id]).safeParkingOrder.trim()
+    if (!order) return
+    try {
+      await navigator.clipboard.writeText(order)
+      setCopiedSafeId(id)
+      window.setTimeout(() => setCopiedSafeId(null), 1500)
+    } catch {
+      // ignore clipboard errors
+    }
   }
 
   function calcArriveEta(id: TruckId) {
@@ -303,13 +324,21 @@ export function TrucksTab() {
   function clearAll() {
     if (
       !window.confirm(
-        'Clear Morning Update, Arrived before 11, CMR, ETA, Safe parking, MO Refusal and New Order for every truck?',
+        'Clear Morning Update, Arrived before 11, ETA, MO Refusal and New Order for every truck? CMR and Safe parking are kept.',
       )
     ) {
       return
     }
     const next: Record<string, TruckRowState> = {}
-    for (const id of truckIds) next[id] = emptyRow()
+    for (const id of truckIds) {
+      const prev = normalizeRow(rows[id])
+      next[id] = {
+        ...emptyRow(),
+        cmr: prev.cmr,
+        safeParking: prev.safeParking,
+        safeParkingOrder: prev.safeParkingOrder,
+      }
+    }
     persistRows(next)
   }
 
@@ -354,6 +383,7 @@ export function TrucksTab() {
       const next: Record<string, TruckRowState> = {}
       for (const id of nextIds) next[id] = normalizeRow(prev[id])
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      notifyTruckRowsChanged()
       return next
     })
     setPopup(null)
@@ -436,6 +466,9 @@ export function TrucksTab() {
     return ids.map((id) => {
       const row = normalizeRow(rows[id])
       const active = id === lastActiveId
+      const driverCard = getDriverCard(id)
+      const trailer = driverCard.trailer?.trim()
+      const hasNotes = Boolean(driverCard.notes?.trim())
       return (
         <Fragment key={id}>
           <tr className={active ? 'row-active' : undefined}>
@@ -460,20 +493,37 @@ export function TrucksTab() {
                 </span>
                 <button
                   type="button"
-                  className="info-btn"
-                  title="Truck info"
+                  className={`info-btn${hasNotes ? ' info-btn--notes' : ''}`}
+                  title={hasNotes ? 'Truck info · has notes' : 'Truck info'}
                   aria-label={`Open truck info for ${id}`}
                   onClick={() => setPopup({ kind: 'edit', truckId: id })}
                 >
                   i
                 </button>
-                <span className="truck-id">
-                  {id}
-                  {(() => {
-                    const trailer = getDriverCard(id).trailer?.trim()
-                    return trailer ? ` / ${trailer}` : ''
-                  })()}
+                <span
+                  className={`truck-id${
+                    weeklyState[id]?.sent ? ' truck-id--weekly-sent' : ''
+                  }`}
+                  title={
+                    weeklyState[id]?.sent
+                      ? 'Weekly instruction sent'
+                      : undefined
+                  }
+                >
+                  {trailer ? `${id} / ${trailer}` : id}
                 </span>
+                {driverCard.companyTag && (
+                  <span
+                    className={`company-tag company-tag--${driverCard.companyTag}`}
+                    title={
+                      driverCard.companyTag === 'prt'
+                        ? 'Periti'
+                        : driverCard.companyTag.toUpperCase()
+                    }
+                  >
+                    {driverCard.companyTag.toUpperCase()}
+                  </span>
+                )}
               </div>
             </td>
             <td className="center">
@@ -650,6 +700,36 @@ export function TrucksTab() {
               )}
             </td>
           </tr>
+          {row.safeParking && (
+            <tr className={`sub-row ${active ? 'row-active' : ''}`}>
+              <td colSpan={COL_COUNT}>
+                <div className="new-order safe-parking">
+                  <span className="new-order__label">Safe parking</span>
+                  <label className="new-order__eta">
+                    <span>Order</span>
+                    <input
+                      type="text"
+                      className="input input--safe-order"
+                      value={row.safeParkingOrder}
+                      placeholder="Order №"
+                      onChange={(e) =>
+                        patch(id, { safeParkingOrder: e.target.value })
+                      }
+                      aria-label={`Safe parking order for ${id}`}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--tiny"
+                    disabled={!row.safeParkingOrder.trim()}
+                    onClick={() => void copySafeOrder(id)}
+                  >
+                    {copiedSafeId === id ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </td>
+            </tr>
+          )}
           {row.newOrder && (
             <tr className={`sub-row ${active ? 'row-active' : ''}`}>
               <td colSpan={COL_COUNT}>

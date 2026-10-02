@@ -12,7 +12,7 @@ import './App.css'
 
 const TABS: { id: TabId; short: string; label: string }[] = [
   { id: 'trucks', short: 'Trucks', label: 'Trucks' },
-  { id: 'instructions', short: 'Generate', label: 'Generate instructions' },
+  { id: 'instructions', short: 'Daily', label: 'Daily instructions' },
   { id: 'weekly', short: 'Weekly', label: 'Weekly Instructions' },
   { id: 'eta', short: 'ETA', label: 'Long Trip ETA' },
   { id: 'orders', short: 'Orders', label: 'Order Account' },

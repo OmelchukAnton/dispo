@@ -1,4 +1,4 @@
-import type { DriverCard, TruckId } from '../types'
+import type { DriverCard, TruckCompanyTag, TruckId } from '../types'
 
 export type TruckGroup = 'fleet' | 'loctracker'
 
@@ -113,6 +113,8 @@ function blankCard(truck: TruckId): DriverCard {
     mechanic: '',
     missing: '',
     cmrDate: '',
+    notes: '',
+    companyTag: null,
   }
 }
 
@@ -126,18 +128,31 @@ const KNOWN_CARDS: Record<string, DriverCard> = {
     mechanic: 'marius + email',
     missing: 'no OMV no TMB',
     cmrDate: 'CMR 05.07',
+    notes: '',
+    companyTag: null,
   },
 }
 
 const DRIVER_CARDS_STORAGE_KEY = 'dispatch-driver-cards-v1'
 
-function loadStoredCards(): Record<string, DriverCard> {
+function normalizeCompanyTag(
+  raw: Partial<DriverCard> & { periti?: boolean },
+): TruckCompanyTag | null {
+  if (raw.companyTag === 'prt' || raw.companyTag === 'h1' || raw.companyTag === 'ha') {
+    return raw.companyTag
+  }
+  // migrate legacy periti checkbox
+  if (raw.periti) return 'prt'
+  return null
+}
+
+function loadStoredCards(): Record<string, Partial<DriverCard> & { periti?: boolean }> {
   const raw = localStorage.getItem(DRIVER_CARDS_STORAGE_KEY)
   if (!raw) return {}
   try {
     const parsed = JSON.parse(raw) as unknown
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, DriverCard>
+      return parsed as Record<string, Partial<DriverCard> & { periti?: boolean }>
     }
   } catch {
     /* ignore */
@@ -148,19 +163,29 @@ function loadStoredCards(): Record<string, DriverCard> {
 export function getDriverCard(truck: TruckId): DriverCard {
   const stored = loadStoredCards()[truck]
   if (stored) {
-    return { ...blankCard(truck), ...stored, truckCompany: stored.truckCompany || truck }
+    return {
+      ...blankCard(truck),
+      ...stored,
+      truckCompany: stored.truckCompany || truck,
+      notes: typeof stored.notes === 'string' ? stored.notes : '',
+      companyTag: normalizeCompanyTag(stored),
+    }
   }
   const known = KNOWN_CARDS[truck]
-  if (known) return { ...known }
+  if (known) return { ...blankCard(truck), ...known }
   return blankCard(truck)
 }
 
 export function saveDriverCard(truck: TruckId, card: DriverCard): void {
   const all = loadStoredCards()
+  const { periti: _legacy, ...rest } = card as DriverCard & { periti?: boolean }
+  void _legacy
   all[truck] = {
     ...blankCard(truck),
-    ...card,
+    ...rest,
     truckCompany: card.truckCompany.trim() || truck,
+    notes: typeof card.notes === 'string' ? card.notes : '',
+    companyTag: normalizeCompanyTag(card),
   }
   localStorage.setItem(DRIVER_CARDS_STORAGE_KEY, JSON.stringify(all))
 }

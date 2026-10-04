@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   FLEET_CHANGED_EVENT,
+  getDriverCard,
   loadFleetIds,
   splitFleetGroups,
 } from '../data/trucks'
@@ -30,7 +31,6 @@ export function WeeklyInstructionsTab() {
     defaultWeeklyForm(),
   )
   const [message, setMessage] = useState('')
-  const [copiedId, setCopiedId] = useState<string | null>(null)
   const [truckIds, setTruckIds] = useState<TruckId[]>(() => loadFleetIds())
   const [truckState, setTruckState] = useState(() =>
     loadWeeklyTruckState(loadFleetIds()),
@@ -82,20 +82,6 @@ export function WeeklyInstructionsTab() {
 
   function generate() {
     setMessage(buildWeeklyMessage(form))
-  }
-
-  async function copyForTruck(id: TruckId) {
-    const text = message || buildWeeklyMessage(form)
-    if (!message) setMessage(text)
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopiedId(id)
-      const current = truckState[id] ?? emptyWeeklyTruck()
-      persist({ ...truckState, [id]: { ...current, sent: true } })
-      window.setTimeout(() => setCopiedId(null), 1500)
-    } catch {
-      // ignore clipboard errors
-    }
   }
 
   function toggleSent(id: TruckId) {
@@ -167,8 +153,14 @@ export function WeeklyInstructionsTab() {
   function renderFleet(ids: TruckId[]) {
     return ids.map((id) => {
       const state = truckState[id] ?? emptyWeeklyTruck()
+      const companyTag = getDriverCard(id).companyTag
       return (
-        <li key={id} className="fleet-chip fleet-chip--weekly">
+        <li
+          key={id}
+          className={`fleet-chip fleet-chip--weekly${
+            companyTag ? ' fleet-chip--company' : ''
+          }`}
+        >
           <button
             type="button"
             className={`fleet-truck ${state.sent ? 'is-sent' : ''}`}
@@ -177,6 +169,16 @@ export function WeeklyInstructionsTab() {
           >
             {id}
           </button>
+          {companyTag && (
+            <span
+              className={`company-tag company-tag--compact company-tag--${companyTag}`}
+              title={
+                companyTag === 'prt' ? 'Periti' : companyTag.toUpperCase()
+              }
+            >
+              {companyTag.toUpperCase()}
+            </span>
+          )}
           <select
             className="select select--weekend"
             aria-label={`Weekend rest for ${id}`}
@@ -191,13 +193,6 @@ export function WeeklyInstructionsTab() {
             <option value="24">24h</option>
             <option value="47">47h</option>
           </select>
-          <button
-            type="button"
-            className="btn btn--ghost btn--tiny"
-            onClick={() => void copyForTruck(id)}
-          >
-            {copiedId === id ? 'Copied' : 'Copy'}
-          </button>
         </li>
       )
     })
@@ -209,7 +204,7 @@ export function WeeklyInstructionsTab() {
         <h2 className="panel__title">Weekly Instructions</h2>
         <p className="panel__hint">
           Short (24–44h with chip) or long (47h+ without chip). Generate once,
-          then Copy per truck.
+          then mark trucks sent.
         </p>
 
         <div className="instructions-form">
@@ -527,7 +522,7 @@ export function WeeklyInstructionsTab() {
 
       <div className="truck-list-card">
         <div className="panel__toolbar panel__toolbar--tight">
-          <h3 className="panel__subtitle">Copy per truck</h3>
+          <h3 className="panel__subtitle">Fleet</h3>
           <div className="panel__toolbar-actions">
             <span className="badge">{sentCount} sent</span>
             <button

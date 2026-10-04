@@ -43,7 +43,7 @@ import { ReplaceTrucksPopup } from './ReplaceTrucksPopup'
 const ETA_HOURS = Array.from({ length: 14 }, (_, i) => i + 5) // 5..18
 const ETA_NOT_TODAY = 'NOT_TODAY'
 const STORAGE_KEY = TRUCKS_ROWS_STORAGE_KEY
-const COL_COUNT = 12
+const COL_COUNT = 13
 
 function todayEtaSelectValue(value: string): string {
   if (!value) return ''
@@ -69,6 +69,7 @@ function emptyRow(): TruckRowState {
     informClient: false,
     cmr: '',
     todayUnloadingEta: '',
+    today: false,
     safeParking: false,
     safeParkingOrder: '',
     moRefusal: false,
@@ -102,6 +103,7 @@ function normalizeRow(
     unloadBy11: Boolean(rest.unloadBy11),
     todayUnloadingEta:
       typeof rest.todayUnloadingEta === 'string' ? rest.todayUnloadingEta : '',
+    today: Boolean(rest.today),
     cmr: typeof rest.cmr === 'string' ? rest.cmr : '',
     safeParking: Boolean(rest.safeParking),
     safeParkingOrder:
@@ -181,6 +183,7 @@ export function TrucksTab() {
   const [pauseSort, setPauseSort] = useState<null | 24 | 47>(null)
   const [truckQuery, setTruckQuery] = useState('')
   const [copiedSafeId, setCopiedSafeId] = useState<string | null>(null)
+  const [copiedEmployeeId, setCopiedEmployeeId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [popup, setPopup] = useState<PopupState>(null)
@@ -275,6 +278,18 @@ export function TrucksTab() {
     }
   }
 
+  async function copyEmployeeId(id: TruckId, employeeId: string) {
+    const text = employeeId.trim()
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedEmployeeId(id)
+      window.setTimeout(() => setCopiedEmployeeId(null), 1500)
+    } catch {
+      // ignore clipboard errors
+    }
+  }
+
   function calcArriveEta(id: TruckId) {
     const row = normalizeRow(rows[id])
     if (row.kmLeft === '' || row.kmLeft <= 0) {
@@ -324,7 +339,7 @@ export function TrucksTab() {
   function clearAll() {
     if (
       !window.confirm(
-        'Clear Morning Update, Arrived before 11, ETA, MO Refusal and New Order for every truck? CMR and Safe parking are kept.',
+        'Clear Morning Update, Arrived before 11, ETA, Today, MO Refusal and New Order for every truck? CMR and Safe parking are kept.',
       )
     ) {
       return
@@ -462,12 +477,18 @@ export function TrucksTab() {
     [rows, truckIds],
   )
 
+  const todayCount = useMemo(
+    () => truckIds.filter((id) => normalizeRow(rows[id]).today).length,
+    [rows, truckIds],
+  )
+
   function renderTruckRows(ids: TruckId[]) {
     return ids.map((id) => {
       const row = normalizeRow(rows[id])
       const active = id === lastActiveId
       const driverCard = getDriverCard(id)
       const trailer = driverCard.trailer?.trim()
+      const employeeId = driverCard.employeeId?.trim() ?? ''
       const hasNotes = Boolean(driverCard.notes?.trim())
       return (
         <Fragment key={id}>
@@ -500,18 +521,34 @@ export function TrucksTab() {
                 >
                   i
                 </button>
-                <span
-                  className={`truck-id${
-                    weeklyState[id]?.sent ? ' truck-id--weekly-sent' : ''
-                  }`}
-                  title={
-                    weeklyState[id]?.sent
-                      ? 'Weekly instruction sent'
-                      : undefined
-                  }
-                >
-                  {trailer ? `${id} / ${trailer}` : id}
-                </span>
+                <div className="truck-id-stack">
+                  <span
+                    className={`truck-id${
+                      weeklyState[id]?.sent ? ' truck-id--weekly-sent' : ''
+                    }`}
+                    title={
+                      weeklyState[id]?.sent
+                        ? 'Weekly instruction sent'
+                        : undefined
+                    }
+                  >
+                    {trailer ? `${id} / ${trailer}` : id}
+                  </span>
+                  {employeeId && (
+                    <button
+                      type="button"
+                      className={`truck-employee-id${
+                        copiedEmployeeId === id
+                          ? ' truck-employee-id--copied'
+                          : ''
+                      }`}
+                      title={`Copy Employee ID ${employeeId}`}
+                      onClick={() => void copyEmployeeId(id, employeeId)}
+                    >
+                      {copiedEmployeeId === id ? 'Copied' : employeeId}
+                    </button>
+                  )}
+                </div>
                 {driverCard.companyTag && (
                   <span
                     className={`company-tag company-tag--${driverCard.companyTag}`}
@@ -577,6 +614,14 @@ export function TrucksTab() {
                   </option>
                 ))}
               </select>
+            </td>
+            <td className="center">
+              <input
+                type="checkbox"
+                checked={row.today}
+                onChange={(e) => patch(id, { today: e.target.checked })}
+                aria-label={`Today for ${id}`}
+              />
             </td>
             <td className="center">
               <input
@@ -850,6 +895,13 @@ export function TrucksTab() {
             <span className="unload-stat__label">Before 11</span>
             <strong className="unload-stat__value">{unloadBy11Count}</strong>
           </div>
+          <div
+            className={`unload-stat ${todayCount > 0 ? 'unload-stat--active' : ''}`}
+            title="Total unloadings marked Today"
+          >
+            <span className="unload-stat__label">Total unloadings</span>
+            <strong className="unload-stat__value">{todayCount}</strong>
+          </div>
           <button
             type="button"
             className="btn btn--primary"
@@ -954,6 +1006,7 @@ export function TrucksTab() {
                 <span>before 11</span>
               </th>
               <th>ETA</th>
+              <th>Today</th>
               <th className="th-stack">
                 <span>Safe</span>
                 <span>parking</span>

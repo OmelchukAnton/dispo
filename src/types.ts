@@ -27,6 +27,8 @@ export interface TruckRowState {
   /** Short CMR date on checklist, e.g. 20.09 */
   cmr: string
   todayUnloadingEta: string
+  /** Marked as having work / relevant today */
+  today: boolean
   safeParking: boolean
   /** Order number for Safe parking request */
   safeParkingOrder: string

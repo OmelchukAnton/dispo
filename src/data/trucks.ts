@@ -138,7 +138,12 @@ const DRIVER_CARDS_STORAGE_KEY = 'dispatch-driver-cards-v1'
 function normalizeCompanyTag(
   raw: Partial<DriverCard> & { periti?: boolean },
 ): TruckCompanyTag | null {
-  if (raw.companyTag === 'prt' || raw.companyTag === 'h1' || raw.companyTag === 'ha') {
+  if (
+    raw.companyTag === 'prt' ||
+    raw.companyTag === 'h1' ||
+    raw.companyTag === 'ha' ||
+    raw.companyTag === 'trl'
+  ) {
     return raw.companyTag
   }
   // migrate legacy periti checkbox
@@ -297,6 +302,37 @@ export function saveFleetIds(ids: TruckId[]): void {
   ])
   localStorage.setItem(FLEET_STORAGE_KEY, JSON.stringify(clean))
   window.dispatchEvent(new Event(FLEET_CHANGED_EVENT))
+}
+
+/**
+ * Reorder a truck within its group (Fleet or Loctracker).
+ * Cross-group moves are ignored. Returns the new full fleet order.
+ */
+export function reorderFleetTruck(
+  dragId: TruckId,
+  targetId: TruckId,
+): TruckId[] {
+  const fromId = normalizeTruckId(dragId)
+  const toId = normalizeTruckId(targetId)
+  if (!fromId || !toId || fromId === toId) return loadFleetIds()
+
+  const ids = loadFleetIds()
+  const { main, loctracker } = splitFleetGroups(ids)
+  const fromMain = main.includes(fromId)
+  const toMain = main.includes(toId)
+  if (fromMain !== toMain) return ids
+
+  const list = fromMain ? [...main] : [...loctracker]
+  const from = list.indexOf(fromId)
+  const to = list.indexOf(toId)
+  if (from < 0 || to < 0) return ids
+
+  list.splice(from, 1)
+  list.splice(to, 0, fromId)
+
+  const next = fromMain ? [...list, ...loctracker] : [...main, ...list]
+  saveFleetIds(next)
+  return loadFleetIds()
 }
 
 /** Add truck and assign Fleet or Loctracker group. */

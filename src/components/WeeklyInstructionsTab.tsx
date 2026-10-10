@@ -173,7 +173,11 @@ export function WeeklyInstructionsTab() {
             <span
               className={`company-tag company-tag--compact company-tag--${companyTag}`}
               title={
-                companyTag === 'prt' ? 'Periti' : companyTag.toUpperCase()
+                companyTag === 'prt'
+                  ? 'Periti'
+                  : companyTag === 'trl'
+                    ? 'Tralles'
+                    : companyTag.toUpperCase()
               }
             >
               {companyTag.toUpperCase()}

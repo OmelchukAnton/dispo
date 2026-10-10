@@ -7,6 +7,7 @@ import { OrderAccountTab } from './components/OrderAccountTab'
 import { AvgDistanceTab } from './components/AvgDistanceTab'
 import { RefSearchTab } from './components/RefSearchTab'
 import { TrafficBansTab } from './components/TrafficBansTab'
+import { EnglishTab } from './components/EnglishTab'
 import type { TabId } from './types'
 import './App.css'
 
@@ -19,6 +20,7 @@ const TABS: { id: TabId; short: string; label: string }[] = [
   { id: 'distance', short: 'Distance', label: 'Avg Distance' },
   { id: 'refs', short: 'Refs', label: 'Ref Search' },
   { id: 'bans', short: 'Bans', label: 'Traffic bans' },
+  { id: 'english', short: 'English', label: 'English practice' },
 ]
 
 function cycleTab(current: TabId, delta: 1 | -1): TabId {
@@ -33,7 +35,7 @@ function App() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-        const n = e.code.match(/^Digit([1-8])$/)?.[1]
+        const n = e.code.match(/^Digit([1-9])$/)?.[1]
         if (n) {
           const target = TABS[Number(n) - 1]
           if (target) {
@@ -101,6 +103,7 @@ function App() {
         {tab === 'distance' && <AvgDistanceTab />}
         {tab === 'refs' && <RefSearchTab />}
         {tab === 'bans' && <TrafficBansTab />}
+        {tab === 'english' && <EnglishTab />}
       </main>
     </div>
   )

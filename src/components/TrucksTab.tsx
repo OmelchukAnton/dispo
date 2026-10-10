@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import type { DragEvent as ReactDragEvent } from 'react'
 import {
   addTruckToGroup,
   FLEET_CHANGED_EVENT,
@@ -6,6 +7,7 @@ import {
   getTruckGroup,
   loadFleetIds,
   removeTruckEverywhere,
+  reorderFleetTruck,
   replaceGroupTrucks,
   saveDriverCard,
   setTruckGroup,
@@ -43,7 +45,37 @@ import { ReplaceTrucksPopup } from './ReplaceTrucksPopup'
 const ETA_HOURS = Array.from({ length: 14 }, (_, i) => i + 5) // 5..18
 const ETA_NOT_TODAY = 'NOT_TODAY'
 const STORAGE_KEY = TRUCKS_ROWS_STORAGE_KEY
-const COL_COUNT = 13
+/** Hide KM / Drive / Calc / Arrive ETA until needed again */
+const SHOW_ARRIVE_ETA_COLS = false
+const COL_COUNT = SHOW_ARRIVE_ETA_COLS ? 14 : 10
+const SAFE_ORDERS_KEY = 'dispatch-safe-orders-v1'
+
+function loadSafeOrderOptions(): string[] {
+  const raw = localStorage.getItem(SAFE_ORDERS_KEY)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return [
+      ...new Set(
+        parsed
+          .map((v) => String(v).trim())
+          .filter(Boolean),
+      ),
+    ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  } catch {
+    return []
+  }
+}
+
+function rememberSafeOrder(order: string): void {
+  const value = order.trim()
+  if (!value) return
+  const next = [
+    ...new Set([...loadSafeOrderOptions(), value]),
+  ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  localStorage.setItem(SAFE_ORDERS_KEY, JSON.stringify(next))
+}
 
 function todayEtaSelectValue(value: string): string {
   if (!value) return ''
@@ -70,6 +102,7 @@ function emptyRow(): TruckRowState {
     cmr: '',
     todayUnloadingEta: '',
     today: false,
+    problem: false,
     safeParking: false,
     safeParkingOrder: '',
     moRefusal: false,
@@ -104,6 +137,7 @@ function normalizeRow(
     todayUnloadingEta:
       typeof rest.todayUnloadingEta === 'string' ? rest.todayUnloadingEta : '',
     today: Boolean(rest.today),
+    problem: Boolean(rest.problem),
     cmr: typeof rest.cmr === 'string' ? rest.cmr : '',
     safeParking: Boolean(rest.safeParking),
     safeParkingOrder:
@@ -169,6 +203,7 @@ type PopupState =
   | { kind: 'add' }
   | { kind: 'edit'; truckId: TruckId }
   | { kind: 'replace' }
+  | { kind: 'safe-order'; truckId: TruckId }
   | null
 
 export function TrucksTab() {
@@ -184,6 +219,9 @@ export function TrucksTab() {
   const [truckQuery, setTruckQuery] = useState('')
   const [copiedSafeId, setCopiedSafeId] = useState<string | null>(null)
   const [copiedEmployeeId, setCopiedEmployeeId] = useState<string | null>(null)
+  const [safeOrderDraft, setSafeOrderDraft] = useState('')
+  const [dragId, setDragId] = useState<TruckId | null>(null)
+  const [dragOverId, setDragOverId] = useState<TruckId | null>(null)
   const [exporting, setExporting] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [popup, setPopup] = useState<PopupState>(null)
@@ -191,6 +229,7 @@ export function TrucksTab() {
   const [groupTick, setGroupTick] = useState(0)
   const tableRef = useRef<HTMLTableElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const safeOrderInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     function syncFleet() {
@@ -235,6 +274,19 @@ export function TrucksTab() {
     }
   }, [menuOpen])
 
+  useEffect(() => {
+    if (popup?.kind !== 'safe-order') return
+    const t = window.setTimeout(() => safeOrderInputRef.current?.focus(), 0)
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setPopup(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.clearTimeout(t)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [popup])
+
   const lastActiveId = useMemo(() => {
     let best: TruckId | null = null
     let bestTs = -1
@@ -266,16 +318,20 @@ export function TrucksTab() {
     persistRows(next)
   }
 
-  async function copySafeOrder(id: TruckId) {
-    const order = normalizeRow(rows[id]).safeParkingOrder.trim()
-    if (!order) return
-    try {
-      await navigator.clipboard.writeText(order)
-      setCopiedSafeId(id)
-      window.setTimeout(() => setCopiedSafeId(null), 1500)
-    } catch {
-      // ignore clipboard errors
-    }
+  function openSafeOrderModal(id: TruckId) {
+    setSafeOrderDraft(normalizeRow(rows[id]).safeParkingOrder)
+    setPopup({ kind: 'safe-order', truckId: id })
+  }
+
+  function saveSafeOrderModal() {
+    if (popup?.kind !== 'safe-order') return
+    const order = safeOrderDraft.trim()
+    patch(popup.truckId, {
+      safeParking: true,
+      safeParkingOrder: order,
+    })
+    if (order) rememberSafeOrder(order)
+    setPopup(null)
   }
 
   async function copyEmployeeId(id: TruckId, employeeId: string) {
@@ -339,7 +395,7 @@ export function TrucksTab() {
   function clearAll() {
     if (
       !window.confirm(
-        'Clear Morning Update, Arrived before 11, ETA, Today, MO Refusal and New Order for every truck? CMR and Safe parking are kept.',
+        'Clear Morning Update, Arrived before 11, ETA, Today, Problem, MO Refusal and New Order for every truck? CMR and Safe parking are kept.',
       )
     ) {
       return
@@ -482,6 +538,43 @@ export function TrucksTab() {
     [rows, truckIds],
   )
 
+  const canReorder = pauseSort == null && !truckQueryNorm
+
+  function handleDragStart(id: TruckId, e: ReactDragEvent) {
+    if (!canReorder) {
+      e.preventDefault()
+      return
+    }
+    setDragId(id)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+  }
+
+  function handleDragOver(id: TruckId, e: ReactDragEvent) {
+    if (!canReorder || !dragId || dragId === id) return
+    if (getTruckGroup(dragId) !== getTruckGroup(id)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverId !== id) setDragOverId(id)
+  }
+
+  function handleDrop(id: TruckId, e: ReactDragEvent) {
+    e.preventDefault()
+    const from = dragId ?? (e.dataTransfer.getData('text/plain') as TruckId)
+    setDragId(null)
+    setDragOverId(null)
+    if (!canReorder || !from || from === id) return
+    if (getTruckGroup(from) !== getTruckGroup(id)) return
+    const next = reorderFleetTruck(from, id)
+    setTruckIds(next)
+    setGroupTick((n) => n + 1)
+  }
+
+  function handleDragEnd() {
+    setDragId(null)
+    setDragOverId(null)
+  }
+
   function renderTruckRows(ids: TruckId[]) {
     return ids.map((id) => {
       const row = normalizeRow(rows[id])
@@ -490,11 +583,42 @@ export function TrucksTab() {
       const trailer = driverCard.trailer?.trim()
       const employeeId = driverCard.employeeId?.trim() ?? ''
       const hasNotes = Boolean(driverCard.notes?.trim())
+      const cmrDueLevel =
+        row.cmr.trim() !== '' ? getCmrAlertLevel(row.cmr) : 'ok'
+      const cmrDue = cmrDueLevel === 'warn' || cmrDueLevel === 'danger'
+      const rowClass = [
+        active ? 'row-active' : '',
+        row.problem ? 'row-problem' : '',
+        dragId === id ? 'truck-row--dragging' : '',
+        dragOverId === id && dragId !== id ? 'truck-row--drag-over' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
       return (
         <Fragment key={id}>
-          <tr className={active ? 'row-active' : undefined}>
+          <tr
+            className={rowClass || undefined}
+            onDragOver={(e) => handleDragOver(id, e)}
+            onDrop={(e) => handleDrop(id, e)}
+          >
             <td>
               <div className="truck-cell">
+                <button
+                  type="button"
+                  className="drag-handle export-hide"
+                  draggable={canReorder}
+                  disabled={!canReorder}
+                  onDragStart={(e) => handleDragStart(id, e)}
+                  onDragEnd={handleDragEnd}
+                  title={
+                    canReorder
+                      ? 'Drag to reorder'
+                      : 'Clear search / pause sort to reorder'
+                  }
+                  aria-label={`Reorder ${id}`}
+                >
+                  ⠿
+                </button>
                 <span
                   className={
                     weeklyState[id]?.weekendRest
@@ -555,10 +679,48 @@ export function TrucksTab() {
                     title={
                       driverCard.companyTag === 'prt'
                         ? 'Periti'
-                        : driverCard.companyTag.toUpperCase()
+                        : driverCard.companyTag === 'trl'
+                          ? 'Tralles'
+                          : driverCard.companyTag.toUpperCase()
                     }
                   >
                     {driverCard.companyTag.toUpperCase()}
+                  </span>
+                )}
+                {(row.safeParking || row.moRefusal || cmrDue) && (
+                  <span className="truck-flags">
+                    {row.safeParking && (
+                      <span
+                        className="company-tag company-tag--safe"
+                        title={
+                          row.safeParkingOrder.trim()
+                            ? `Safe parking · order ${row.safeParkingOrder.trim()}`
+                            : 'Safe parking'
+                        }
+                      >
+                        SAFE
+                      </span>
+                    )}
+                    {row.moRefusal && (
+                      <span
+                        className="company-tag company-tag--mo"
+                        title="MO Refusal"
+                      >
+                        MO
+                      </span>
+                    )}
+                    {cmrDue && (
+                      <span
+                        className={`company-tag company-tag--cmr company-tag--cmr-${cmrDueLevel}`}
+                        title={
+                          cmrDueLevel === 'danger'
+                            ? 'CMR overdue — turn in now (>14 days)'
+                            : 'CMR due soon — turn in (>10 days)'
+                        }
+                      >
+                        CMR
+                      </span>
+                    )}
                   </span>
                 )}
               </div>
@@ -626,10 +788,9 @@ export function TrucksTab() {
             <td className="center">
               <input
                 type="checkbox"
-                checked={row.safeParking}
-                onChange={(e) =>
-                  patch(id, { safeParking: e.target.checked })
-                }
+                checked={row.problem}
+                onChange={(e) => patch(id, { problem: e.target.checked })}
+                aria-label={`Problem for ${id}`}
               />
             </td>
             <td className="center">
@@ -677,106 +838,126 @@ export function TrucksTab() {
                 aria-label={`CMR date for ${id}`}
               />
             </td>
-            <td className="km-cell">
-              <input
-                type="number"
-                min={0}
-                step={1}
-                className="input input--km"
-                value={row.kmLeft === '' ? '' : row.kmLeft}
-                placeholder="—"
-                onChange={(e) => {
-                  const v = e.target.value.trim()
-                  if (v === '') {
-                    patch(id, { kmLeft: '', arriveEta: '' })
-                    return
+            <td className="safe-cell">
+              <div className="safe-cell__inner">
+                <input
+                  type="checkbox"
+                  checked={row.safeParking}
+                  onChange={(e) =>
+                    patch(id, { safeParking: e.target.checked })
                   }
-                  const n = Number(v.replace(',', '.'))
-                  patch(id, {
-                    kmLeft: Number.isFinite(n) && n >= 0 ? n : '',
-                    arriveEta: '',
-                  })
-                }}
-                aria-label={`KM left for ${id}`}
-              />
-            </td>
-            <td className="km-cell">
-              <input
-                type="number"
-                min={0}
-                step={0.5}
-                className="input input--km"
-                value={row.driveLeftHours === '' ? '' : row.driveLeftHours}
-                placeholder="—"
-                onChange={(e) => {
-                  const v = e.target.value.trim()
-                  if (v === '') {
-                    patch(id, { driveLeftHours: '', arriveEta: '' })
-                    return
+                  aria-label={`Safe parking for ${id}`}
+                />
+                <button
+                  type="button"
+                  className={`safe-order-btn${
+                    row.safeParkingOrder.trim() ? ' is-set' : ''
+                  }`}
+                  onClick={() => openSafeOrderModal(id)}
+                  title={
+                    row.safeParkingOrder.trim()
+                      ? `Order ${row.safeParkingOrder.trim()} — click to edit`
+                      : 'Set order number'
                   }
-                  const n = Number(v.replace(',', '.'))
-                  patch(id, {
-                    driveLeftHours: Number.isFinite(n) && n >= 0 ? n : '',
-                    arriveEta: '',
-                  })
-                }}
-                aria-label={`Drive left hours for ${id}`}
-              />
-            </td>
-            <td className="center">
-              <button
-                type="button"
-                className="btn btn--primary btn--tiny"
-                disabled={
-                  row.kmLeft === '' ||
-                  row.kmLeft <= 0 ||
-                  row.driveLeftHours === ''
-                }
-                onClick={() => calcArriveEta(id)}
-              >
-                Calc
-              </button>
-            </td>
-            <td className="arrive-cell">
-              {row.arriveEta ? (
-                <strong className="arrive-eta">{row.arriveEta}</strong>
-              ) : (
-                <span className="muted">—</span>
-              )}
-            </td>
-          </tr>
-          {row.safeParking && (
-            <tr className={`sub-row ${active ? 'row-active' : ''}`}>
-              <td colSpan={COL_COUNT}>
-                <div className="new-order safe-parking">
-                  <span className="new-order__label">Safe parking</span>
-                  <label className="new-order__eta">
-                    <span>Order</span>
-                    <input
-                      type="text"
-                      className="input input--safe-order"
-                      value={row.safeParkingOrder}
-                      placeholder="Order №"
-                      onChange={(e) =>
-                        patch(id, { safeParkingOrder: e.target.value })
-                      }
-                      aria-label={`Safe parking order for ${id}`}
+                  aria-label={
+                    row.safeParkingOrder.trim()
+                      ? `Safe order ${row.safeParkingOrder.trim()}`
+                      : 'Set safe order'
+                  }
+                >
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="14"
+                    height="14"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M4.5 1A1.5 1.5 0 0 0 3 2.5v11A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5V5.207a1.5 1.5 0 0 0-.44-1.06L9.853 1.44A1.5 1.5 0 0 0 8.793 1H4.5Zm0 1h4v2.5A1.5 1.5 0 0 0 10 6h2.5v7.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5Zm5 0.707L11.793 5H10a.5.5 0 0 1-.5-.5V2.707ZM5.5 8a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1h-5Zm0 2a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1h-5Zm0 2a.5.5 0 0 0 0 1h3a.5.5 0 0 0 0-1h-3Z"
                     />
-                  </label>
+                  </svg>
+                </button>
+              </div>
+            </td>
+            {SHOW_ARRIVE_ETA_COLS && (
+              <>
+                <td className="km-cell">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className="input input--km"
+                    value={row.kmLeft === '' ? '' : row.kmLeft}
+                    placeholder="—"
+                    onChange={(e) => {
+                      const v = e.target.value.trim()
+                      if (v === '') {
+                        patch(id, { kmLeft: '', arriveEta: '' })
+                        return
+                      }
+                      const n = Number(v.replace(',', '.'))
+                      patch(id, {
+                        kmLeft: Number.isFinite(n) && n >= 0 ? n : '',
+                        arriveEta: '',
+                      })
+                    }}
+                    aria-label={`KM left for ${id}`}
+                  />
+                </td>
+                <td className="km-cell">
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    className="input input--km"
+                    value={row.driveLeftHours === '' ? '' : row.driveLeftHours}
+                    placeholder="—"
+                    onChange={(e) => {
+                      const v = e.target.value.trim()
+                      if (v === '') {
+                        patch(id, { driveLeftHours: '', arriveEta: '' })
+                        return
+                      }
+                      const n = Number(v.replace(',', '.'))
+                      patch(id, {
+                        driveLeftHours: Number.isFinite(n) && n >= 0 ? n : '',
+                        arriveEta: '',
+                      })
+                    }}
+                    aria-label={`Drive left hours for ${id}`}
+                  />
+                </td>
+                <td className="center">
                   <button
                     type="button"
-                    className="btn btn--ghost btn--tiny"
-                    disabled={!row.safeParkingOrder.trim()}
-                    onClick={() => void copySafeOrder(id)}
+                    className="btn btn--primary btn--tiny"
+                    disabled={
+                      row.kmLeft === '' ||
+                      row.kmLeft <= 0 ||
+                      row.driveLeftHours === ''
+                    }
+                    onClick={() => calcArriveEta(id)}
                   >
-                    {copiedSafeId === id ? 'Copied' : 'Copy'}
+                    Calc
                   </button>
-                </div>
-              </td>
-            </tr>
-          )}
+                </td>
+                <td className="arrive-cell">
+                  {row.arriveEta ? (
+                    <strong className="arrive-eta">{row.arriveEta}</strong>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+              </>
+            )}
+          </tr>
           {row.newOrder && (
-            <tr className={`sub-row ${active ? 'row-active' : ''}`}>
+            <tr
+              className={`sub-row${active ? ' row-active' : ''}${
+                row.problem ? ' row-problem' : ''
+              }`}
+            >
               <td colSpan={COL_COUNT}>
                 <div className="new-order">
                   <span className="new-order__label">New Order</span>
@@ -862,9 +1043,11 @@ export function TrucksTab() {
                 : truckIds.length}
             </span>
           </h2>
-          <p className="panel__hint panel__hint--tight">
-            KM left + Drive left → Calc Arrive ETA
-          </p>
+          {SHOW_ARRIVE_ETA_COLS && (
+            <p className="panel__hint panel__hint--tight">
+              KM left + Drive left → Calc Arrive ETA
+            </p>
+          )}
         </div>
         <div className="panel__toolbar-actions">
           <label className="truck-search">
@@ -1007,10 +1190,7 @@ export function TrucksTab() {
               </th>
               <th>ETA</th>
               <th>Today</th>
-              <th className="th-stack">
-                <span>Safe</span>
-                <span>parking</span>
-              </th>
+              <th>Problem</th>
               <th className="th-stack">
                 <span>MO</span>
                 <span>Refusal</span>
@@ -1043,18 +1223,26 @@ export function TrucksTab() {
                 </div>
               </th>
               <th className="th-stack">
-                <span>KM</span>
-                <span>left</span>
+                <span>Safe</span>
+                <span>parking</span>
               </th>
-              <th className="th-stack">
-                <span>Drive</span>
-                <span>left (h)</span>
-              </th>
-              <th></th>
-              <th className="th-stack">
-                <span>Arrive</span>
-                <span>ETA</span>
-              </th>
+              {SHOW_ARRIVE_ETA_COLS && (
+                <>
+                  <th className="th-stack">
+                    <span>KM</span>
+                    <span>left</span>
+                  </th>
+                  <th className="th-stack">
+                    <span>Drive</span>
+                    <span>left (h)</span>
+                  </th>
+                  <th></th>
+                  <th className="th-stack">
+                    <span>Arrive</span>
+                    <span>ETA</span>
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -1083,6 +1271,84 @@ export function TrucksTab() {
         </table>
       </div>
 
+      {popup?.kind === 'safe-order' && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setPopup(null)}
+          role="presentation"
+        >
+          <div
+            className="modal modal--safe-order"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="safe-order-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="modal__header">
+              <h2 id="safe-order-title">Safe parking · {popup.truckId}</h2>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setPopup(null)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </header>
+            <div className="safe-order-form">
+              <label className="field">
+                <span>Order number</span>
+                <input
+                  ref={safeOrderInputRef}
+                  className="input"
+                  value={safeOrderDraft}
+                  onChange={(e) => setSafeOrderDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      saveSafeOrderModal()
+                    }
+                  }}
+                  placeholder="Order №"
+                />
+              </label>
+            </div>
+            <footer className="modal__footer">
+              <button
+                type="button"
+                className="btn btn--ghost"
+                disabled={!safeOrderDraft.trim()}
+                onClick={() => {
+                  const order = safeOrderDraft.trim()
+                  if (!order) return
+                  void navigator.clipboard.writeText(order).then(() => {
+                    setCopiedSafeId(popup.truckId)
+                    window.setTimeout(() => setCopiedSafeId(null), 1500)
+                  })
+                }}
+              >
+                {copiedSafeId === popup.truckId ? 'Copied' : 'Copy'}
+              </button>
+              <div className="modal__footer-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setPopup(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={saveSafeOrderModal}
+                >
+                  Save
+                </button>
+              </div>
+            </footer>
+          </div>
+        </div>
+      )}
       {popup?.kind === 'replace' && (
         <ReplaceTrucksPopup
           fleetIds={mainIds}

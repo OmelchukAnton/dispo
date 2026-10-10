@@ -1,7 +1,7 @@
 export type TruckId = string
 
 /** Company tags shown in Trucks column */
-export type TruckCompanyTag = 'prt' | 'h1' | 'ha'
+export type TruckCompanyTag = 'prt' | 'h1' | 'ha' | 'trl'
 
 export interface DriverCard {
   driverName: string
@@ -14,7 +14,7 @@ export interface DriverCard {
   cmrDate: string
   /** Free-form notes — highlight info icon when filled */
   notes: string
-  /** Company tag: PRT (Periti), H1, HA */
+  /** Company tag: PRT (Periti), H1, HA, TRL (Tralles) */
   companyTag: TruckCompanyTag | null
 }
 
@@ -29,6 +29,8 @@ export interface TruckRowState {
   todayUnloadingEta: string
   /** Marked as having work / relevant today */
   today: boolean
+  /** Flag a problem with this truck — highlight the row */
+  problem: boolean
   safeParking: boolean
   /** Order number for Safe parking request */
   safeParkingOrder: string
@@ -68,6 +70,25 @@ export type TabId =
   | 'distance'
   | 'refs'
   | 'bans'
+  | 'english'
+
+export type EnglishCardKind = 'word' | 'phrase' | 'rule'
+
+export type EnglishGrade = 'again' | 'good' | 'easy'
+
+export interface EnglishCard {
+  id: string
+  front: string
+  back: string
+  example: string
+  kind: EnglishCardKind
+  /** Next review time (ms) */
+  nextReview: number
+  /** Current interval in days */
+  intervalDays: number
+  ease: number
+  reps: number
+}
 
 export type WeeklyLang = 'en' | 'ru'
 export type WeeklyPauseKind = 'short' | 'long'

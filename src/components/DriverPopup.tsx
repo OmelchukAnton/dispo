@@ -19,6 +19,7 @@ const COMPANY_OPTIONS: { value: TruckCompanyTag | ''; label: string }[] = [
   { value: 'prt', label: 'PRT · Periti' },
   { value: 'h1', label: 'H1' },
   { value: 'ha', label: 'HA' },
+  { value: 'trl', label: 'TRL · Tralles' },
 ]
 
 interface BaseProps {
@@ -197,7 +198,12 @@ export function DriverPopup(props: Props) {
                 setCard((prev) => ({
                   ...prev,
                   companyTag:
-                    v === 'prt' || v === 'h1' || v === 'ha' ? v : null,
+                    v === 'prt' ||
+                    v === 'h1' ||
+                    v === 'ha' ||
+                    v === 'trl'
+                      ? v
+                      : null,
                 }))
               }}
             >

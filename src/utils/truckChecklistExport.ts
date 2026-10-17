@@ -14,6 +14,23 @@ export function downloadDataUrl(dataUrl: string, fileName: string): void {
   a.click()
 }
 
+/**
+ * Copy a PNG to the clipboard.
+ * Must be called synchronously from a user gesture: pass a Promise that
+ * resolves to the PNG blob (browser keeps the write "armed" while it runs).
+ */
+export async function copyPngBlobToClipboard(
+  png: Blob | Promise<Blob>,
+): Promise<void> {
+  if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+    throw new Error('Clipboard image copy is not supported in this browser')
+  }
+  window.focus()
+  await navigator.clipboard.write([
+    new ClipboardItem({ 'image/png': png }),
+  ])
+}
+
 /** Capture only the table element as a PNG (full scroll size). */
 export async function captureTablePng(table: HTMLElement): Promise<string> {
   const width = Math.ceil(table.scrollWidth)

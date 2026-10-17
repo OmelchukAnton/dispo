@@ -21,6 +21,7 @@ import {
 import {
   emptyWeeklyTruck,
   loadWeeklyTruckState,
+  saveWeeklyTruckState,
   WEEKLY_CHANGED_EVENT,
 } from '../data/weeklyTrucks'
 import type {
@@ -29,25 +30,19 @@ import type {
   TruckRowState,
   WeeklyTruckState,
 } from '../types'
-import {
-  estimateParkingArrive,
-  formatArriveClock,
-} from '../utils/parkingEta'
 import { getCmrAlertLevel, type CmrAlertLevel } from '../utils/cmrDate'
 import {
   captureTablePng,
-  checklistImageFileName,
-  downloadDataUrl,
+  copyPngBlobToClipboard,
 } from '../utils/truckChecklistExport'
+import { BulkFillPopup, type BulkFillOp } from './BulkFillPopup'
 import { DriverPopup } from './DriverPopup'
 import { ReplaceTrucksPopup } from './ReplaceTrucksPopup'
 
 const ETA_HOURS = Array.from({ length: 14 }, (_, i) => i + 5) // 5..18
 const ETA_NOT_TODAY = 'NOT_TODAY'
 const STORAGE_KEY = TRUCKS_ROWS_STORAGE_KEY
-/** Hide KM / Drive / Calc / Arrive ETA until needed again */
-const SHOW_ARRIVE_ETA_COLS = false
-const COL_COUNT = SHOW_ARRIVE_ETA_COLS ? 14 : 10
+const COL_COUNT = 11
 const SAFE_ORDERS_KEY = 'dispatch-safe-orders-v1'
 
 function loadSafeOrderOptions(): string[] {
@@ -83,15 +78,6 @@ function todayEtaSelectValue(value: string): string {
   return String(etaHourOf(value))
 }
 
-function parseOptionalNumber(value: unknown): number | '' {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string' && value.trim() !== '') {
-    const n = Number(value.replace(',', '.'))
-    return Number.isFinite(n) ? n : ''
-  }
-  return ''
-}
-
 function emptyRow(): TruckRowState {
   return {
     loaded: false,
@@ -110,9 +96,7 @@ function emptyRow(): TruckRowState {
     newOrder: false,
     newOrderLoaded: false,
     newOrderEta: '',
-    kmLeft: '',
-    driveLeftHours: '',
-    arriveEta: '',
+    flagNote: '',
     updatedAt: null,
   }
 }
@@ -121,14 +105,32 @@ function normalizeRow(
   raw: (Partial<TruckRowState> & {
     closeTrip?: boolean
     todayUnloading?: boolean
+    kmLeft?: unknown
+    driveLeftHours?: unknown
+    arriveEta?: unknown
+    flagged?: boolean
   }) | undefined,
 ): TruckRowState {
-  const { closeTrip: legacyCloseTrip, todayUnloading: _tu, ...rest } =
-    raw ?? {}
+  const {
+    closeTrip: legacyCloseTrip,
+    todayUnloading: _tu,
+    kmLeft: _km,
+    driveLeftHours: _drive,
+    arriveEta: _arrive,
+    flagged: legacyFlagged,
+    ...rest
+  } = raw ?? {}
   void legacyCloseTrip
   void _tu
-  const kmLeft = parseOptionalNumber(rest.kmLeft)
-  const driveLeftHours = parseOptionalNumber(rest.driveLeftHours)
+  void _km
+  void _drive
+  void _arrive
+  const flagNote =
+    typeof rest.flagNote === 'string'
+      ? rest.flagNote
+      : legacyFlagged
+        ? '•'
+        : ''
   return {
     ...emptyRow(),
     ...rest,
@@ -146,12 +148,7 @@ function normalizeRow(
     newOrder: Boolean(rest.newOrder),
     newOrderLoaded: Boolean(rest.newOrderLoaded),
     newOrderEta: typeof rest.newOrderEta === 'string' ? rest.newOrderEta : '',
-    kmLeft: kmLeft === '' || (kmLeft as number) < 0 ? '' : kmLeft,
-    driveLeftHours:
-      driveLeftHours === '' || (driveLeftHours as number) < 0
-        ? ''
-        : driveLeftHours,
-    arriveEta: typeof rest.arriveEta === 'string' ? rest.arriveEta : '',
+    flagNote,
   }
 }
 
@@ -203,7 +200,9 @@ type PopupState =
   | { kind: 'add' }
   | { kind: 'edit'; truckId: TruckId }
   | { kind: 'replace' }
+  | { kind: 'bulk-fill' }
   | { kind: 'safe-order'; truckId: TruckId }
+  | { kind: 'flag-note'; truckId: TruckId }
   | null
 
 export function TrucksTab() {
@@ -220,6 +219,7 @@ export function TrucksTab() {
   const [copiedSafeId, setCopiedSafeId] = useState<string | null>(null)
   const [copiedEmployeeId, setCopiedEmployeeId] = useState<string | null>(null)
   const [safeOrderDraft, setSafeOrderDraft] = useState('')
+  const [flagNoteDraft, setFlagNoteDraft] = useState('')
   const [dragId, setDragId] = useState<TruckId | null>(null)
   const [dragOverId, setDragOverId] = useState<TruckId | null>(null)
   const [exporting, setExporting] = useState(false)
@@ -230,6 +230,7 @@ export function TrucksTab() {
   const tableRef = useRef<HTMLTableElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const safeOrderInputRef = useRef<HTMLInputElement>(null)
+  const flagNoteInputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     function syncFleet() {
@@ -275,8 +276,11 @@ export function TrucksTab() {
   }, [menuOpen])
 
   useEffect(() => {
-    if (popup?.kind !== 'safe-order') return
-    const t = window.setTimeout(() => safeOrderInputRef.current?.focus(), 0)
+    if (popup?.kind !== 'safe-order' && popup?.kind !== 'flag-note') return
+    const t = window.setTimeout(() => {
+      if (popup.kind === 'safe-order') safeOrderInputRef.current?.focus()
+      if (popup.kind === 'flag-note') flagNoteInputRef.current?.focus()
+    }, 0)
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') setPopup(null)
     }
@@ -334,6 +338,24 @@ export function TrucksTab() {
     setPopup(null)
   }
 
+  function openFlagNoteModal(id: TruckId) {
+    setFlagNoteDraft(normalizeRow(rows[id]).flagNote)
+    setPopup({ kind: 'flag-note', truckId: id })
+  }
+
+  function saveFlagNoteModal() {
+    if (popup?.kind !== 'flag-note') return
+    patch(popup.truckId, { flagNote: flagNoteDraft.trim() })
+    setPopup(null)
+  }
+
+  function clearFlagNoteModal() {
+    if (popup?.kind !== 'flag-note') return
+    setFlagNoteDraft('')
+    patch(popup.truckId, { flagNote: '' })
+    setPopup(null)
+  }
+
   async function copyEmployeeId(id: TruckId, employeeId: string) {
     const text = employeeId.trim()
     if (!text) return
@@ -344,29 +366,6 @@ export function TrucksTab() {
     } catch {
       // ignore clipboard errors
     }
-  }
-
-  function calcArriveEta(id: TruckId) {
-    const row = normalizeRow(rows[id])
-    if (row.kmLeft === '' || row.kmLeft <= 0) {
-      patch(id, { arriveEta: '' })
-      return
-    }
-    if (row.driveLeftHours === '' || row.driveLeftHours < 0) {
-      window.alert('Enter Drive left (h), then Calc')
-      return
-    }
-    const now = new Date()
-    const arrive = estimateParkingArrive({
-      now,
-      distanceKm: row.kmLeft,
-      driveLeftHours: row.driveLeftHours,
-    })
-    if (!arrive) {
-      patch(id, { arriveEta: '' })
-      return
-    }
-    patch(id, { arriveEta: formatArriveClock(arrive, now) })
   }
 
   function checkCmrDates() {
@@ -395,7 +394,7 @@ export function TrucksTab() {
   function clearAll() {
     if (
       !window.confirm(
-        'Clear Morning Update, Arrived before 11, ETA, Today, Problem, MO Refusal and New Order for every truck? CMR and Safe parking are kept.',
+        'Clear Morning Update, Arrived before 11, ETA, Today, Problem, MO Refusal, New Order and Flag for every truck? CMR and Safe parking are kept.',
       )
     ) {
       return
@@ -460,6 +459,71 @@ export function TrucksTab() {
     setPopup(null)
   }
 
+  function handleBulkFill(ops: BulkFillOp[]) {
+    let nextRows = { ...rows }
+    let nextWeekly = { ...weeklyState }
+    let nextIds = [...truckIds]
+
+    for (const op of ops) {
+      if (op.isNew) {
+        nextIds = addTruckToGroup(op.truckId, op.group)
+        const card = getDriverCard(op.truckId)
+        saveDriverCard(op.truckId, {
+          ...card,
+          employeeId: op.employeeId,
+          companyTag: op.companyTag,
+          cmrDate: op.cmr,
+          truckCompany: card.truckCompany.trim() || op.truckId,
+        })
+        nextRows[op.truckId] = {
+          ...emptyRow(),
+          cmr: op.cmr,
+          moRefusal: op.moRefusal,
+          safeParking: op.safeParking,
+        }
+        nextWeekly[op.truckId] = {
+          ...emptyWeeklyTruck(),
+          weekendRest: op.pause,
+        }
+      } else {
+        setTruckGroup(op.truckId, op.group)
+        const card = getDriverCard(op.truckId)
+        saveDriverCard(op.truckId, {
+          ...card,
+          employeeId: op.employeeId,
+          companyTag: op.companyTag,
+          cmrDate: op.cmr,
+        })
+        const prev = normalizeRow(nextRows[op.truckId])
+        nextRows[op.truckId] = {
+          ...prev,
+          cmr: op.cmr,
+          moRefusal: op.moRefusal,
+          safeParking: op.safeParking,
+          updatedAt: Date.now(),
+        }
+        nextWeekly[op.truckId] = {
+          ...(nextWeekly[op.truckId] ?? emptyWeeklyTruck()),
+          weekendRest: op.pause,
+        }
+      }
+    }
+
+    nextIds = loadFleetIds()
+    for (const id of nextIds) {
+      nextRows[id] = normalizeRow(nextRows[id])
+      nextWeekly[id] = nextWeekly[id] ?? emptyWeeklyTruck()
+    }
+
+    setTruckIds(nextIds)
+    setGroupTick((n) => n + 1)
+    setCardTick((n) => n + 1)
+    persistRows(nextRows)
+    saveWeeklyTruckState(nextWeekly)
+    setWeeklyState(nextWeekly)
+    setPopup(null)
+  }
+
   const { main: mainIds, loctracker: loctrackerIds } = useMemo(() => {
     const { main, loctracker } = splitFleetGroups(truckIds)
     if (pauseSort == null) {
@@ -515,13 +579,19 @@ export function TrucksTab() {
     }
     setExporting(true)
     try {
-      // Let React apply export-hide before capture
-      await new Promise<void>((r) => requestAnimationFrame(() => r()))
-      const dataUrl = await captureTablePng(table)
-      downloadDataUrl(dataUrl, checklistImageFileName())
+      // Start clipboard write in the same user gesture; blob resolves later.
+      const pngPromise = (async () => {
+        await new Promise<void>((r) => requestAnimationFrame(() => r()))
+        const dataUrl = await captureTablePng(table)
+        const res = await fetch(dataUrl)
+        return res.blob()
+      })()
+      await copyPngBlobToClipboard(pngPromise)
     } catch (e) {
       window.alert(
-        e instanceof Error ? e.message : 'Failed to capture table screenshot',
+        e instanceof Error
+          ? e.message
+          : 'Failed to copy screenshot to clipboard',
       )
     } finally {
       setExporting(false)
@@ -880,77 +950,35 @@ export function TrucksTab() {
                 </button>
               </div>
             </td>
-            {SHOW_ARRIVE_ETA_COLS && (
-              <>
-                <td className="km-cell">
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    className="input input--km"
-                    value={row.kmLeft === '' ? '' : row.kmLeft}
-                    placeholder="—"
-                    onChange={(e) => {
-                      const v = e.target.value.trim()
-                      if (v === '') {
-                        patch(id, { kmLeft: '', arriveEta: '' })
-                        return
-                      }
-                      const n = Number(v.replace(',', '.'))
-                      patch(id, {
-                        kmLeft: Number.isFinite(n) && n >= 0 ? n : '',
-                        arriveEta: '',
-                      })
-                    }}
-                    aria-label={`KM left for ${id}`}
+            <td className="center">
+              <button
+                type="button"
+                className={`flag-toggle${
+                  row.flagNote.trim() ? ' is-on' : ''
+                }`}
+                aria-pressed={Boolean(row.flagNote.trim())}
+                aria-label={`Flag note for ${id}`}
+                title={
+                  row.flagNote.trim()
+                    ? row.flagNote.trim()
+                    : 'Add flag note'
+                }
+                onClick={() => openFlagNoteModal(id)}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  width="15"
+                  height="15"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M2.75 1.5a.75.75 0 0 0-1.5 0v13a.75.75 0 0 0 1.5 0V9.25h9.04c.62 0 .97-.7.6-1.2L10.1 5.5l2.29-2.55c.37-.5.02-1.2-.6-1.2H2.75V1.5Z"
                   />
-                </td>
-                <td className="km-cell">
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    className="input input--km"
-                    value={row.driveLeftHours === '' ? '' : row.driveLeftHours}
-                    placeholder="—"
-                    onChange={(e) => {
-                      const v = e.target.value.trim()
-                      if (v === '') {
-                        patch(id, { driveLeftHours: '', arriveEta: '' })
-                        return
-                      }
-                      const n = Number(v.replace(',', '.'))
-                      patch(id, {
-                        driveLeftHours: Number.isFinite(n) && n >= 0 ? n : '',
-                        arriveEta: '',
-                      })
-                    }}
-                    aria-label={`Drive left hours for ${id}`}
-                  />
-                </td>
-                <td className="center">
-                  <button
-                    type="button"
-                    className="btn btn--primary btn--tiny"
-                    disabled={
-                      row.kmLeft === '' ||
-                      row.kmLeft <= 0 ||
-                      row.driveLeftHours === ''
-                    }
-                    onClick={() => calcArriveEta(id)}
-                  >
-                    Calc
-                  </button>
-                </td>
-                <td className="arrive-cell">
-                  {row.arriveEta ? (
-                    <strong className="arrive-eta">{row.arriveEta}</strong>
-                  ) : (
-                    <span className="muted">—</span>
-                  )}
-                </td>
-              </>
-            )}
+                </svg>
+              </button>
+            </td>
           </tr>
           {row.newOrder && (
             <tr
@@ -1043,11 +1071,6 @@ export function TrucksTab() {
                 : truckIds.length}
             </span>
           </h2>
-          {SHOW_ARRIVE_ETA_COLS && (
-            <p className="panel__hint panel__hint--tight">
-              KM left + Drive left → Calc Arrive ETA
-            </p>
-          )}
         </div>
         <div className="panel__toolbar-actions">
           <label className="truck-search">
@@ -1087,6 +1110,13 @@ export function TrucksTab() {
           </div>
           <button
             type="button"
+            className="btn"
+            onClick={() => setPopup({ kind: 'bulk-fill' })}
+          >
+            Bulk fill
+          </button>
+          <button
+            type="button"
             className="btn btn--primary"
             onClick={() => setPopup({ kind: 'add' })}
           >
@@ -1111,11 +1141,10 @@ export function TrucksTab() {
                   className="toolbar-menu__item"
                   disabled={exporting}
                   onClick={() => {
-                    setMenuOpen(false)
-                    void exportChecklist()
+                    void exportChecklist().finally(() => setMenuOpen(false))
                   }}
                 >
-                  {exporting ? 'Export…' : 'Export screenshot'}
+                  {exporting ? 'Copying…' : 'Copy screenshot'}
                 </button>
                 <button
                   type="button"
@@ -1226,23 +1255,20 @@ export function TrucksTab() {
                 <span>Safe</span>
                 <span>parking</span>
               </th>
-              {SHOW_ARRIVE_ETA_COLS && (
-                <>
-                  <th className="th-stack">
-                    <span>KM</span>
-                    <span>left</span>
-                  </th>
-                  <th className="th-stack">
-                    <span>Drive</span>
-                    <span>left (h)</span>
-                  </th>
-                  <th></th>
-                  <th className="th-stack">
-                    <span>Arrive</span>
-                    <span>ETA</span>
-                  </th>
-                </>
-              )}
+              <th className="th-flag" aria-label="Flag">
+                <svg
+                  viewBox="0 0 16 16"
+                  width="14"
+                  height="14"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M2.75 1.5a.75.75 0 0 0-1.5 0v13a.75.75 0 0 0 1.5 0V9.25h9.04c.62 0 .97-.7.6-1.2L10.1 5.5l2.29-2.55c.37-.5.02-1.2-.6-1.2H2.75V1.5Z"
+                  />
+                </svg>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -1349,12 +1375,99 @@ export function TrucksTab() {
           </div>
         </div>
       )}
+      {popup?.kind === 'flag-note' && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setPopup(null)}
+          role="presentation"
+        >
+          <div
+            className="modal modal--flag-note"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="flag-note-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="modal__header">
+              <h2 id="flag-note-title">Flag · {popup.truckId}</h2>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setPopup(null)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </header>
+            <div className="flag-note-form">
+              <label className="field">
+                <span>Note</span>
+                <textarea
+                  ref={flagNoteInputRef}
+                  className="input input--textarea"
+                  rows={4}
+                  value={flagNoteDraft}
+                  onChange={(e) => setFlagNoteDraft(e.target.value)}
+                  placeholder="Write a note…"
+                />
+              </label>
+            </div>
+            <footer className="modal__footer">
+              <button
+                type="button"
+                className="btn btn--ghost"
+                disabled={!flagNoteDraft.trim()}
+                onClick={clearFlagNoteModal}
+              >
+                Clear
+              </button>
+              <div className="modal__footer-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setPopup(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={saveFlagNoteModal}
+                >
+                  Save
+                </button>
+              </div>
+            </footer>
+          </div>
+        </div>
+      )}
       {popup?.kind === 'replace' && (
         <ReplaceTrucksPopup
           fleetIds={mainIds}
           locIds={loctrackerIds}
           onClose={() => setPopup(null)}
           onReplace={handleReplaceList}
+        />
+      )}
+      {popup?.kind === 'bulk-fill' && (
+        <BulkFillPopup
+          existingIds={truckIds}
+          seedByTruck={Object.fromEntries(
+            truckIds.map((id) => {
+              const row = normalizeRow(rows[id])
+              return [
+                id,
+                {
+                  cmr: row.cmr,
+                  moRefusal: row.moRefusal,
+                  safeParking: row.safeParking,
+                  pause: weeklyState[id]?.weekendRest ?? null,
+                },
+              ]
+            }),
+          )}
+          onClose={() => setPopup(null)}
+          onAccept={handleBulkFill}
         />
       )}
       {popup?.kind === 'add' && (

@@ -546,9 +546,9 @@
 }
 
 .pause-badge--47 {
-  color: #7a3e0c;
-  background: #fde8c8;
-  border-color: #efc48a;
+  color: #854d0e;
+  background: #fef08a;
+  border-color: #eab308;
 }
 
 .company-tag {
@@ -658,9 +658,9 @@
 }
 
 .pause-sort-btn--47.is-active {
-  color: #7a3e0c;
-  background: #fde8c8;
-  border-color: #efc48a;
+  color: #854d0e;
+  background: #fef08a;
+  border-color: #eab308;
 }
 
 .data-table--trucks {
@@ -709,12 +709,6 @@
 
 .data-table--trucks .sub-row.row-active td:first-child {
   background: #eef2f0;
-}
-
-.data-table--trucks .km-cell {
-  text-align: center;
-  vertical-align: middle;
-  padding: 0.3rem 0.35rem;
 }
 
 .data-table--trucks .cmr-cell {
@@ -773,28 +767,43 @@
   background: #fff;
 }
 
-.data-table--trucks .input--km {
-  width: 4.5rem;
-  padding: 0.3rem 0.35rem;
-  font-size: 0.85rem;
-  font-family: 'IBM Plex Mono', monospace;
-  font-weight: 600;
-  text-align: center;
+.data-table--trucks .th-flag {
+  width: 2.2rem;
+  color: var(--muted);
+}
+
+.data-table--trucks .flag-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  margin: 0;
+  padding: 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px;
   background: #fff;
+  color: #9aa7b5;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
 }
 
-.data-table--trucks .arrive-cell {
-  text-align: center;
-  vertical-align: middle;
-  white-space: nowrap;
-}
-
-.data-table--trucks .arrive-eta {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 0.92rem;
+.data-table--trucks .flag-toggle:hover {
+  border-color: #7a8fa3;
   color: #16324f;
+}
+
+.data-table--trucks .flag-toggle.is-on {
+  background: #16324f;
+  border-color: #16324f;
+  color: #f4f7fa;
+}
+
+.data-table--trucks .flag-toggle:focus-visible {
+  outline: 2px solid #16324f;
+  outline-offset: 2px;
 }
 
 .data-table--trucks .eta-cell {
@@ -1021,6 +1030,21 @@
   padding: 1rem;
 }
 
+.modal--flag-note {
+  width: min(420px, 100%);
+}
+
+.flag-note-form {
+  padding: 1rem;
+}
+
+.flag-note-form .input--textarea {
+  resize: vertical;
+  min-height: 5rem;
+  font-family: inherit;
+  line-height: 1.4;
+}
+
 .input--datetime {
   width: auto;
   min-width: 12.5rem;
@@ -1105,6 +1129,86 @@
 
 .modal--trucks-list {
   max-width: 32rem;
+}
+
+.modal--bulk-fill {
+  width: min(1100px, 100%);
+  max-height: min(92vh, 860px);
+}
+
+.bulk-fill__hint {
+  margin: 0;
+  padding: 0.65rem 1rem 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.bulk-fill__table-wrap {
+  padding: 0.75rem 1rem;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.bulk-fill-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.bulk-fill-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0.25rem 0.3rem 0.45rem;
+  white-space: nowrap;
+}
+
+.bulk-fill-table td {
+  padding: 0.2rem 0.25rem;
+  vertical-align: middle;
+}
+
+.bulk-fill-table .input,
+.bulk-fill-table .input--plain,
+.bulk-fill-table .select--compact {
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.85rem;
+  border-radius: 8px;
+}
+
+.bulk-fill-table .input--cmr-bulk {
+  width: 4.2rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  text-align: center;
+}
+
+.bulk-fill-table .th-center,
+.bulk-fill-table td.center {
+  text-align: center;
+}
+
+.bulk-fill-table td.center input[type='checkbox'] {
+  width: 0.95rem;
+  height: 0.95rem;
+  margin: 0;
+  accent-color: #16324f;
+}
+
+.bulk-fill-table__actions {
+  width: 2rem;
+  text-align: center;
+}
+
+.bulk-fill-table .input--plain:disabled {
+  background: #f1f5f9;
+  color: #334155;
+  cursor: default;
 }
 
 .replace-truck-list {
@@ -1309,6 +1413,24 @@
   font-weight: 600;
   border-radius: 6px;
   text-align: center;
+}
+
+.select--weekend--24 {
+  color: #1e4a6e;
+  background: #dde8f4;
+  border-color: #b7cce0;
+}
+
+.select--weekend--47 {
+  color: #854d0e;
+  background: #fef08a;
+  border-color: #eab308;
+}
+
+.bulk-fill-table .select--pause--47 {
+  color: #854d0e;
+  background: #fef08a;
+  border-color: #eab308;
 }
 
 .badge {

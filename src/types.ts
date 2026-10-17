@@ -39,12 +39,8 @@ export interface TruckRowState {
   newOrder: boolean
   newOrderLoaded: boolean
   newOrderEta: string
-  /** Remaining km for Arrive ETA */
-  kmLeft: number | ''
-  /** Drive hours left today for this truck */
-  driveLeftHours: number | ''
-  /** Last calculated Arrive ETA label (empty until Calc) */
-  arriveEta: string
+  /** Flag note — flag highlights when non-empty */
+  flagNote: string
   updatedAt: number | null
 }
 

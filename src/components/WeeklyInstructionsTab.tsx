@@ -6,6 +6,11 @@ import {
   splitFleetGroups,
 } from '../data/trucks'
 import {
+  loadSafeParkingMap,
+  TRUCKS_ROWS_CHANGED_EVENT,
+  type SafeParkingInfo,
+} from '../data/truckRows'
+import {
   emptyWeeklyTruck,
   loadWeeklyTruckState,
   saveWeeklyTruckState,
@@ -35,6 +40,10 @@ export function WeeklyInstructionsTab() {
   const [truckState, setTruckState] = useState(() =>
     loadWeeklyTruckState(loadFleetIds()),
   )
+  const [safeParking, setSafeParking] = useState<
+    Record<string, SafeParkingInfo>
+  >(() => loadSafeParkingMap(loadFleetIds()))
+  const [copiedSafeId, setCopiedSafeId] = useState<string | null>(null)
 
   useEffect(() => {
     function syncFleet() {
@@ -46,15 +55,21 @@ export function WeeklyInstructionsTab() {
         saveWeeklyTruckState(next)
         return next
       })
+      setSafeParking(loadSafeParkingMap(ids))
     }
     function syncWeekly() {
       setTruckState(loadWeeklyTruckState(loadFleetIds()))
     }
+    function syncSafeParking() {
+      setSafeParking(loadSafeParkingMap(loadFleetIds()))
+    }
     window.addEventListener(FLEET_CHANGED_EVENT, syncFleet)
     window.addEventListener(WEEKLY_CHANGED_EVENT, syncWeekly)
+    window.addEventListener(TRUCKS_ROWS_CHANGED_EVENT, syncSafeParking)
     return () => {
       window.removeEventListener(FLEET_CHANGED_EVENT, syncFleet)
       window.removeEventListener(WEEKLY_CHANGED_EVENT, syncWeekly)
+      window.removeEventListener(TRUCKS_ROWS_CHANGED_EVENT, syncSafeParking)
     }
   }, [])
 
@@ -150,16 +165,31 @@ export function WeeklyInstructionsTab() {
     [truckIds],
   )
 
+  async function copySafeOrder(id: TruckId, order: string) {
+    const text = order.trim()
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedSafeId(id)
+      window.setTimeout(() => setCopiedSafeId(null), 1500)
+    } catch {
+      // ignore clipboard errors
+    }
+  }
+
   function renderFleet(ids: TruckId[]) {
     return ids.map((id) => {
       const state = truckState[id] ?? emptyWeeklyTruck()
       const companyTag = getDriverCard(id).companyTag
+      const safe = safeParking[id]
+      const needsSafe = Boolean(safe?.safeParking)
+      const order = safe?.order ?? ''
       return (
         <li
           key={id}
           className={`fleet-chip fleet-chip--weekly${
             companyTag ? ' fleet-chip--company' : ''
-          }`}
+          }${needsSafe ? ' fleet-chip--safe' : ''}`}
         >
           <button
             type="button"
@@ -169,6 +199,26 @@ export function WeeklyInstructionsTab() {
           >
             {id}
           </button>
+          <select
+            className={`select select--weekend${
+              state.weekendRest === 24
+                ? ' select--weekend--24'
+                : state.weekendRest === 47
+                  ? ' select--weekend--47'
+                  : ''
+            }`}
+            aria-label={`Weekend rest for ${id}`}
+            title="Weekend Rest"
+            value={state.weekendRest ?? ''}
+            onChange={(e) => {
+              const v = e.target.value
+              setWeekend(id, v === '' ? null : (Number(v) as 24 | 47))
+            }}
+          >
+            <option value="">—</option>
+            <option value="24">24h</option>
+            <option value="47">47h</option>
+          </select>
           {companyTag && (
             <span
               className={`company-tag company-tag--compact company-tag--${companyTag}`}
@@ -183,20 +233,21 @@ export function WeeklyInstructionsTab() {
               {companyTag.toUpperCase()}
             </span>
           )}
-          <select
-            className="select select--weekend"
-            aria-label={`Weekend rest for ${id}`}
-            title="Weekend Rest"
-            value={state.weekendRest ?? ''}
-            onChange={(e) => {
-              const v = e.target.value
-              setWeekend(id, v === '' ? null : (Number(v) as 24 | 47))
-            }}
-          >
-            <option value="">—</option>
-            <option value="24">24h</option>
-            <option value="47">47h</option>
-          </select>
+          {needsSafe && (
+            <button
+              type="button"
+              className="safe-badge"
+              disabled={!order}
+              onClick={() => void copySafeOrder(id, order)}
+              title={
+                order
+                  ? `Copy order ${order}`
+                  : 'No order number — set it on Trucks → Safe'
+              }
+            >
+              {copiedSafeId === id ? 'OK' : 'SAFE'}
+            </button>
+          )}
         </li>
       )
     })

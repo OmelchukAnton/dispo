@@ -10,11 +10,17 @@ import {
   TRUCKS_ROWS_CHANGED_EVENT,
   type SafeParkingInfo,
 } from '../data/truckRows'
+import {
+  loadWeeklyTruckState,
+  setWeekendRest,
+  WEEKLY_CHANGED_EVENT,
+} from '../data/weeklyTrucks'
 import type {
   InstructionTruckState,
   OpType,
   RestHours,
   TruckId,
+  WeekendRest,
 } from '../types'
 import { wallClockMinutesForDriving } from '../utils/breaks'
 import { parseTimeInput } from '../utils/format'
@@ -108,6 +114,9 @@ export function InstructionsTab() {
   const [safeParking, setSafeParking] = useState<
     Record<string, SafeParkingInfo>
   >(() => loadSafeParkingMap(loadFleetIds()))
+  const [weeklyState, setWeeklyState] = useState(() =>
+    loadWeeklyTruckState(loadFleetIds()),
+  )
   const [copiedSafeId, setCopiedSafeId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -121,15 +130,21 @@ export function InstructionsTab() {
         return next
       })
       setSafeParking(loadSafeParkingMap(ids))
+      setWeeklyState(loadWeeklyTruckState(ids))
     }
     function syncSafeParking() {
       setSafeParking(loadSafeParkingMap(loadFleetIds()))
     }
+    function syncWeekly() {
+      setWeeklyState(loadWeeklyTruckState(loadFleetIds()))
+    }
     window.addEventListener(FLEET_CHANGED_EVENT, syncFleet)
     window.addEventListener(TRUCKS_ROWS_CHANGED_EVENT, syncSafeParking)
+    window.addEventListener(WEEKLY_CHANGED_EVENT, syncWeekly)
     return () => {
       window.removeEventListener(FLEET_CHANGED_EVENT, syncFleet)
       window.removeEventListener(TRUCKS_ROWS_CHANGED_EVENT, syncSafeParking)
+      window.removeEventListener(WEEKLY_CHANGED_EVENT, syncWeekly)
     }
   }, [])
 
@@ -238,13 +253,16 @@ export function InstructionsTab() {
   function renderFleetChips(ids: TruckId[]) {
     return ids.map((id) => {
       const state = truckState[id] ?? emptyInstruction()
+      const weekendRest = weeklyState[id]?.weekendRest ?? null
       const safe = safeParking[id]
       const needsSafe = Boolean(safe?.safeParking)
       const order = safe?.order ?? ''
       return (
         <li
           key={id}
-          className={`fleet-chip${needsSafe ? ' fleet-chip--safe' : ''}`}
+          className={`fleet-chip fleet-chip--weekly${
+            needsSafe ? ' fleet-chip--safe' : ''
+          }`}
         >
           <button
             type="button"
@@ -254,6 +272,29 @@ export function InstructionsTab() {
           >
             {id}
           </button>
+          <select
+            className={`select select--weekend${
+              weekendRest === 24
+                ? ' select--weekend--24'
+                : weekendRest === 47
+                  ? ' select--weekend--47'
+                  : ''
+            }`}
+            aria-label={`Weekend rest for ${id}`}
+            title="Weekend Rest"
+            value={weekendRest ?? ''}
+            onChange={(e) => {
+              const v = e.target.value
+              setWeekendRest(
+                id,
+                v === '' ? null : (Number(v) as WeekendRest),
+              )
+            }}
+          >
+            <option value="">—</option>
+            <option value="24">24h</option>
+            <option value="47">47h</option>
+          </select>
           {needsSafe && (
             <button
               type="button"

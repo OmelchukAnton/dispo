@@ -138,13 +138,21 @@ export function InstructionsTab() {
     function syncWeekly() {
       setWeeklyState(loadWeeklyTruckState(loadFleetIds()))
     }
+    function syncInstructions() {
+      setTruckState(loadInstructionState(loadFleetIds()))
+    }
     window.addEventListener(FLEET_CHANGED_EVENT, syncFleet)
     window.addEventListener(TRUCKS_ROWS_CHANGED_EVENT, syncSafeParking)
     window.addEventListener(WEEKLY_CHANGED_EVENT, syncWeekly)
+    window.addEventListener('dispatch-instructions-changed', syncInstructions)
     return () => {
       window.removeEventListener(FLEET_CHANGED_EVENT, syncFleet)
       window.removeEventListener(TRUCKS_ROWS_CHANGED_EVENT, syncSafeParking)
       window.removeEventListener(WEEKLY_CHANGED_EVENT, syncWeekly)
+      window.removeEventListener(
+        'dispatch-instructions-changed',
+        syncInstructions,
+      )
     }
   }, [])
 

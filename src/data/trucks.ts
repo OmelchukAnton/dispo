@@ -4,8 +4,12 @@ export type TruckGroup = 'fleet' | 'loctracker'
 
 /** Default Loctracker plates */
 export const DEFAULT_LOCTRACKER_IDS: TruckId[] = [
+  'MOF678',
   'MOF688',
+  'MOF704',
+  'MRV389',
   'MSF879',
+  'NEH923',
   'NHM791',
   'NJO636',
   'NJO638',
@@ -24,13 +28,14 @@ export function loadLoctrackerIds(): TruckId[] {
     try {
       const parsed = JSON.parse(raw) as unknown
       if (Array.isArray(parsed)) {
-        return [
+        return sortTruckIds([
           ...new Set(
             parsed
               .map((v) => String(v).trim().toUpperCase())
-              .filter(Boolean),
+              .filter(Boolean)
+              .filter((id) => id !== 'OR6553' && id !== 'T433G'),
           ),
-        ]
+        ])
       }
     } catch {
       /* fallthrough */
@@ -39,10 +44,16 @@ export function loadLoctrackerIds(): TruckId[] {
   return [...DEFAULT_LOCTRACKER_IDS]
 }
 
+function sortTruckIds(ids: TruckId[]): TruckId[] {
+  return [...ids].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true }),
+  )
+}
+
 export function saveLoctrackerIds(ids: TruckId[]): void {
-  const clean = [
+  const clean = sortTruckIds([
     ...new Set(ids.map((id) => id.trim().toUpperCase()).filter(Boolean)),
-  ]
+  ])
   localStorage.setItem(LOCTRACKER_STORAGE_KEY, JSON.stringify(clean))
 }
 
@@ -50,7 +61,7 @@ export function isLoctrackerTruck(id: TruckId): boolean {
   return loadLoctrackerIds().includes(id)
 }
 
-/** Main fleet first, then Loctracker — keeps groups together */
+/** Main fleet first, then Loctracker (A→Z) — keeps groups together */
 export function orderFleetIds(
   ids: TruckId[],
   loctrackerIds: TruckId[] = loadLoctrackerIds(),
@@ -62,7 +73,7 @@ export function orderFleetIds(
     if (locSet.has(id)) loc.push(id)
     else main.push(id)
   }
-  return [...main, ...loc]
+  return [...main, ...sortTruckIds(loc)]
 }
 
 export function splitFleetGroups(ids: TruckId[]): {
@@ -76,7 +87,7 @@ export function splitFleetGroups(ids: TruckId[]): {
     if (locSet.has(id)) loctracker.push(id)
     else main.push(id)
   }
-  return { main, loctracker }
+  return { main, loctracker: sortTruckIds(loctracker) }
 }
 
 export const DEFAULT_TRUCK_IDS: TruckId[] = orderFleetIds(
@@ -130,6 +141,18 @@ const KNOWN_CARDS: Record<string, DriverCard> = {
     cmrDate: 'CMR 05.07',
     notes: '',
     companyTag: null,
+  },
+  MRV389: {
+    driverName: 'Yadwinder Singh',
+    birthDate: '',
+    employeeId: '',
+    truckCompany: 'MRV389',
+    trailer: 'PN287',
+    mechanic: '',
+    missing: '',
+    cmrDate: '',
+    notes: '',
+    companyTag: 'h1',
   },
 }
 
@@ -219,7 +242,14 @@ export function loadFleetIds(): TruckId[] {
           .filter(Boolean)
           .map((id) => (id === 'AIF363' ? 'AFI363' : id))
           .filter((id) => id !== 'AIN475')
-        const unique = orderFleetIds(ensureNewTrucks([...new Set(ids)]))
+          .filter((id) => id !== 'OR6553' && id !== 'T433G')
+        const unique = orderFleetIds(
+          ensureMrv389(
+            dropOr6553T433g(
+              ensureLoctrackerOct25(ensureNewTrucks([...new Set(ids)])),
+            ),
+          ),
+        )
         if (unique.length) {
           if (JSON.stringify(unique) !== JSON.stringify(parsed)) {
             localStorage.setItem(FLEET_STORAGE_KEY, JSON.stringify(unique))
@@ -255,6 +285,79 @@ function ensureNewTrucks(ids: TruckId[]): TruckId[] {
   }
   if (changed) {
     localStorage.setItem(FLEET_STORAGE_KEY, JSON.stringify(orderFleetIds(ids)))
+  }
+  return ids
+}
+
+/** One-time: add MRV389 (H1 · Yadwinder Singh / PN287) to Loctracker. */
+function ensureMrv389(ids: TruckId[]): TruckId[] {
+  const flag = 'dispatch-fleet-add-mrv389-loc'
+  if (localStorage.getItem(flag)) return ids
+  localStorage.setItem(flag, '1')
+
+  const id: TruckId = 'MRV389'
+  const loc = loadLoctrackerIds()
+  if (!loc.includes(id)) {
+    loc.push(id)
+    saveLoctrackerIds(loc)
+  }
+  if (!ids.includes(id)) ids.push(id)
+
+  const known = KNOWN_CARDS[id]
+  if (known) {
+    const stored = loadStoredCards()[id]
+    if (!stored) saveDriverCard(id, known)
+  }
+
+  const next = orderFleetIds(ids, loc)
+  localStorage.setItem(FLEET_STORAGE_KEY, JSON.stringify(next))
+  return next
+}
+
+/** Drop OR6553 / T433G from fleet + Loctracker (not in static defaults). */
+function dropOr6553T433g(ids: TruckId[]): TruckId[] {
+  const drop = new Set<TruckId>(['OR6553', 'T433G'])
+  const flag = 'dispatch-fleet-drop-or6553-t433g'
+  if (!localStorage.getItem(flag)) {
+    localStorage.setItem(flag, '1')
+    const locBefore = loadLoctrackerIds()
+    const loc = locBefore.filter((id) => !drop.has(id))
+    if (loc.length !== locBefore.length) saveLoctrackerIds(loc)
+    for (const id of drop) deleteDriverCard(id)
+  }
+  return ids.filter((id) => !drop.has(id))
+}
+
+/** One-time: add MOF678, MOF704, NEH923 to Loctracker + fleet. */
+function ensureLoctrackerOct25(ids: TruckId[]): TruckId[] {
+  const flag = 'dispatch-fleet-add-loctracker-oct25'
+  if (localStorage.getItem(flag)) return ids
+  localStorage.setItem(flag, '1')
+
+  const extra: TruckId[] = ['MOF678', 'MOF704', 'NEH923']
+  const loc = loadLoctrackerIds()
+  let locChanged = false
+  for (const id of extra) {
+    if (!loc.includes(id)) {
+      loc.push(id)
+      locChanged = true
+    }
+  }
+  if (locChanged) saveLoctrackerIds(loc)
+
+  const set = new Set(ids)
+  let changed = false
+  for (const id of extra) {
+    if (!set.has(id)) {
+      ids.push(id)
+      set.add(id)
+      changed = true
+    }
+  }
+  if (changed || locChanged) {
+    const next = orderFleetIds(ids, loc)
+    localStorage.setItem(FLEET_STORAGE_KEY, JSON.stringify(next))
+    return next
   }
   return ids
 }

@@ -391,10 +391,30 @@ export function TrucksTab() {
     }
   }
 
+  function clearDailySentMarks() {
+    const key = 'dispatch-instructions-v1'
+    const raw = localStorage.getItem(key)
+    let parsed: Record<string, { sent?: boolean }> = {}
+    if (raw) {
+      try {
+        parsed = JSON.parse(raw) as typeof parsed
+      } catch {
+        parsed = {}
+      }
+    }
+    const next: Record<string, { sent: boolean }> = {}
+    const ids = new Set([...truckIds, ...Object.keys(parsed)])
+    for (const id of ids) {
+      next[id] = { sent: false }
+    }
+    localStorage.setItem(key, JSON.stringify(next))
+    window.dispatchEvent(new Event('dispatch-instructions-changed'))
+  }
+
   function clearAll() {
     if (
       !window.confirm(
-        'Clear Morning Update, Arrived before 11, ETA, Today, Problem, MO Refusal, New Order and Flag for every truck? CMR and Safe parking are kept.',
+        'Clear Morning Update, Arrived before 11, ETA, Today, New Order for every truck, and Daily sent marks? CMR, Safe parking, Problem, MO Refusal and Flag notes are kept.',
       )
     ) {
       return
@@ -407,9 +427,13 @@ export function TrucksTab() {
         cmr: prev.cmr,
         safeParking: prev.safeParking,
         safeParkingOrder: prev.safeParkingOrder,
+        problem: prev.problem,
+        moRefusal: prev.moRefusal,
+        flagNote: prev.flagNote,
       }
     }
     persistRows(next)
+    clearDailySentMarks()
   }
 
   function handleAddSave(id: TruckId, group: TruckGroup, card: DriverCard) {

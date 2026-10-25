@@ -72,12 +72,32 @@ export type EnglishCardKind = 'word' | 'phrase' | 'rule'
 
 export type EnglishGrade = 'again' | 'good' | 'easy'
 
+/** Study topics in the English tab */
+export type EnglishTopicId =
+  | 'connectors'
+  | 'daily'
+  | 'work'
+  | 'logistics'
+  | 'travel'
+  | 'food'
+  | 'health'
+  | 'time'
+  | 'grammar'
+  | 'past-present'
+  | 'plans'
+  | 'calls'
+  | 'email'
+  | 'polite'
+  | 'road'
+  | 'describe-day'
+
 export interface EnglishCard {
   id: string
   front: string
   back: string
   example: string
   kind: EnglishCardKind
+  topic: EnglishTopicId
   /** Next review time (ms) */
   nextReview: number
   /** Current interval in days */

@@ -796,13 +796,18 @@
 }
 
 .data-table--trucks .flag-toggle.is-on {
-  background: #16324f;
-  border-color: #16324f;
-  color: #f4f7fa;
+  background: #fff;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.data-table--trucks .flag-toggle.is-on:hover {
+  border-color: #f87171;
+  color: #b91c1c;
 }
 
 .data-table--trucks .flag-toggle:focus-visible {
-  outline: 2px solid #16324f;
+  outline: 2px solid #dc2626;
   outline-offset: 2px;
 }
 
@@ -1980,6 +1985,70 @@
   display: inline-flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+.english-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 0 0.85rem;
+}
+
+.english-topic-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.english-topic-chip:hover {
+  border-color: #9bb0c0;
+}
+
+.english-topic-chip.is-active {
+  background: #16324f;
+  border-color: #16324f;
+  color: #f4f7fa;
+}
+
+.english-topic-chip__count {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  opacity: 0.75;
+}
+
+.english-flashcard__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: center;
+  margin-bottom: 0.35rem;
+}
+
+.english-flashcard__topic {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.english-topic-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #334155;
+  background: #eef2f6;
 }
 
 .english-session {

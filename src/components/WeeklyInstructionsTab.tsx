@@ -324,32 +324,36 @@ export function WeeklyInstructionsTab() {
             </select>
           </fieldset>
 
-          <fieldset className="fieldset">
-            <legend>Tonight pause</legend>
-            <select
-              className="select"
-              value={form.tonightPause}
-              onChange={(e) =>
-                patchForm({
-                  tonightPause: e.target.value as WeeklyTonightPause,
-                })
-              }
-            >
-              <option value="9">9h</option>
-              <option value="11">11h</option>
-              <option value="none">None</option>
-            </select>
-          </fieldset>
+          {form.pauseKind === 'long' && (
+            <>
+              <fieldset className="fieldset">
+                <legend>Tonight pause</legend>
+                <select
+                  className="select"
+                  value={form.tonightPause}
+                  onChange={(e) =>
+                    patchForm({
+                      tonightPause: e.target.value as WeeklyTonightPause,
+                    })
+                  }
+                >
+                  <option value="9">9h</option>
+                  <option value="11">11h</option>
+                  <option value="none">None</option>
+                </select>
+              </fieldset>
 
-          <fieldset className="fieldset">
-            <legend>Tomorrow start</legend>
-            <input
-              className="input input--plain"
-              value={form.tomorrowStart}
-              onChange={(e) => patchForm({ tomorrowStart: e.target.value })}
-              placeholder="3:00"
-            />
-          </fieldset>
+              <fieldset className="fieldset">
+                <legend>Tomorrow start</legend>
+                <input
+                  className="input input--plain"
+                  value={form.tomorrowStart}
+                  onChange={(e) => patchForm({ tomorrowStart: e.target.value })}
+                  placeholder="3:00"
+                />
+              </fieldset>
+            </>
+          )}
 
           <fieldset className="fieldset">
             <legend>Tomorrow goal</legend>

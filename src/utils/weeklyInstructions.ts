@@ -76,11 +76,14 @@ function todayLineRu(f: WeeklyInstructionForm): string {
 }
 
 function pauseLineEn(f: WeeklyInstructionForm): string | null {
+  // Short pause: driver chooses tonight rest / tomorrow start
+  if (f.pauseKind === 'short') return null
   if (f.tonightPause === 'none' || f.tonightPause === 'pull_chip') return null
   return `make ${f.tonightPause}h pause`
 }
 
 function pauseLineRu(f: WeeklyInstructionForm): string | null {
+  if (f.pauseKind === 'short') return null
   if (f.tonightPause === 'none' || f.tonightPause === 'pull_chip') return null
   return `делайте паузу ${f.tonightPause}ч`
 }
@@ -91,6 +94,17 @@ function pullChipTomorrow(f: WeeklyInstructionForm): boolean {
 }
 
 function tomorrowGoalEn(f: WeeklyInstructionForm): string {
+  // Short: no start time — driver decides when to leave
+  if (f.pauseKind === 'short') {
+    if (f.tomorrowGoal === 'close_to_delivery') {
+      return 'Tomorrow go as close as possible to the delivery place and stay on next parking from the task'
+    }
+    if (f.tomorrowGoal === 'custom' && f.tomorrowCustom.trim()) {
+      return `Tomorrow ${f.tomorrowCustom.trim()}`
+    }
+    return 'Tomorrow go to the next parking and stay on next parking from the task'
+  }
+
   const start = fmtTime(f.tomorrowStart)
   const startBit = start ? `tomorrow start ${start}` : 'tomorrow start'
   let goal: string
@@ -108,6 +122,16 @@ function tomorrowGoalEn(f: WeeklyInstructionForm): string {
 }
 
 function tomorrowGoalRu(f: WeeklyInstructionForm): string {
+  if (f.pauseKind === 'short') {
+    if (f.tomorrowGoal === 'close_to_delivery') {
+      return 'Завтра доезжайте как можно ближе к месту выгрузки и становитесь на следующий паркинг по заданию'
+    }
+    if (f.tomorrowGoal === 'custom' && f.tomorrowCustom.trim()) {
+      return `Завтра ${f.tomorrowCustom.trim()}`
+    }
+    return 'Завтра едем на следующий паркинг по заданию и становимся на нём'
+  }
+
   const start = fmtTime(f.tomorrowStart)
   const startBit = start ? `завтра старт ${start}` : 'завтра старт'
   let goal: string
